@@ -4,9 +4,12 @@ import uuid
 from app.db.database.database import Base
 
 
-class PromptReceiver(Base):
-    __tablename__ = "prompt_receiver"
+class AIInterpreter(Base):
+    __tablename__ = "ai_interpreter"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     prompt = Column(String, nullable=False)
-    # response = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+    
+    
