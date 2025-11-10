@@ -21,6 +21,8 @@ class SVGElementCreate(SVGElementBase):
 class SVGElementRead(SVGElementBase):
     id: UUID
     
-    class Config:
-        orm_mode = True
+class Config:
+    orm_mode = True
+    
+    
     
