@@ -6,6 +6,5 @@ class User(Base):
     __tablename__ = 'users'
 
     id = Column(UUID, primary_key=True, nullable=False, default=lambda : uuid.uuid4())
-    username = Column(String(200), nullable=False)
     email = Column(String(200), nullable=False)
     password = Column(String(300), nullable=False)
