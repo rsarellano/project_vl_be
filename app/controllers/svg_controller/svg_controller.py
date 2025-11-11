@@ -5,6 +5,8 @@ from app.connection.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, status, Depends
 
+
+
 router = APIRouter(prefix="/svg-elements",
                    tags=["svg_elements"]
                    )
@@ -14,3 +16,6 @@ router = APIRouter(prefix="/svg-elements",
 async def create_new_svg(svg_element: SVGElementBase, db: AsyncSession = Depends(get_db)):
 
         return await create_svg_element(db,svg_element)
+
+
+
