@@ -1,4 +1,4 @@
-from app.db.models.stored_svg import SVGElement
+# from app.db.models.stored_svg import SVGElement
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
