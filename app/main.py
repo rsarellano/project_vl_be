@@ -1,9 +1,5 @@
-
 from fastapi import FastAPI
-from app.services.svg_services import svg_elements_service
-from app.controllers.svg_controller.svg_controller import router as svg_element_router
-from app.controllers.ai_controller.ai_prompt_controller import router as ai_prompt_router
-from app.connection.database import engine, Base
+from fastapi.middleware.cors import CORSMiddleware 
 from app.controllers.main_router import router
 from app.connection.database import init_models
 
@@ -12,19 +8,12 @@ async def lifespan(app):
     yield
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://192.168.1.9:5173"],
+    allow_credentials=True,       # Allows cookies, authorization headers
+    allow_methods=["*"],          # Allows all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],
+)
 
 app.include_router(router)
-
-# def custom_openai():
-#     if app.openai_schema:
-
-
-app.include_router(svg_element_router)
-app.include_router(ai_prompt_router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("Tables ensured on startup")

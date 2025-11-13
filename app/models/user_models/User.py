@@ -1,5 +1,6 @@
 from app.connection.database import Base
 from sqlalchemy import Column, UUID, String
+from sqlalchemy.orm import relationship
 import uuid
 
 class User(Base):
@@ -8,3 +9,5 @@ class User(Base):
     id = Column(UUID, primary_key=True, nullable=False, default=lambda : uuid.uuid4())
     email = Column(String(200), nullable=False)
     password = Column(String(300), nullable=False)
+
+    tokens = relationship("Token", back_populates="owner")
