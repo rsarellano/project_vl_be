@@ -27,7 +27,13 @@ async def create_answer(data: AnswerCreate) -> AnswerRead:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        detail = str(exc)
+        if "invalid_api_key" in detail or "Incorrect API key" in detail:
+            raise HTTPException(
+                status_code=400,
+                detail="OPENAI_API_KEY is invalid. Set a valid key in project_vl_be/.env and restart the server.",
+            ) from exc
+        raise HTTPException(status_code=500, detail=detail) from exc
 
 
 @answer_router.get("/samples/while-loop", response_model=DrawingStage)

@@ -19,8 +19,13 @@ from app.services.ai_services.drawing_stage_prompts import (
 )
 from app.services.ai_services.question_type_identifier import identify_question_type
 
-api_key = os.getenv("OPENAI_API_KEY")
-answer_model = os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o")
+
+def _openai_api_key() -> str | None:
+    return os.getenv("OPENAI_API_KEY")
+
+
+def _answer_model() -> str:
+    return os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o")
 
 
 def _flatten_lines(value: Any) -> list[str]:
@@ -61,6 +66,7 @@ async def answer_user_prompt(
     cleaned = (prompt or "").strip()
     if not cleaned:
         raise ValueError("Prompt must not be empty.")
+    api_key = _openai_api_key()
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not configured.")
 
@@ -70,7 +76,7 @@ async def answer_user_prompt(
         subject_domain=subject_domain,
     )
 
-    llm = ChatOpenAI(temperature=0.2, model=answer_model, api_key=api_key)
+    llm = ChatOpenAI(temperature=0.2, model=_answer_model(), api_key=api_key)
     structured = llm.with_structured_output(DrawingStage, method="function_calling")
 
     messages = [

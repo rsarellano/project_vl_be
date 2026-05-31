@@ -279,10 +279,11 @@ def _build_question_type_guidance(info: QuestionTypeInfo) -> str:
 
     if domain == "coding" and subtype == "loop_trace":
         return (
-            f"Question type routing: coding.loop_trace.\n{_FLAG_DRIVEN_REMINDER}\n"
-            "Each iteration of the loop is one ``BoxCreation`` card with the loop "
-            "variable state inside; pair each card with a matching ``console`` "
-            "``TextCreation`` item that shows the printed value for that iteration."
+            f"Question type routing: coding.loop_trace.\n{_CODE_MAP_REMINDER}\n"
+            "Put the full loop program in ``CodeDisplay.text`` (one string per line). "
+            "Split ``portions`` by iteration or phase (setup, each pass through the loop "
+            "body, exit check). Each ``BoxCreation`` explains variable state and condition "
+            "results for that portion via ``linkedPortion``."
         )
     if domain == "coding" and subtype == "code_explain":
         return (
@@ -422,11 +423,7 @@ def build_drawing_stage_human_message(
     usage_prefix = f"{usage_block}\n\n" if usage_block else ""
     pasted_block = _build_pasted_code_block(p)
 
-    if question_type.domain == "coding" and question_type.subtype in (
-        "code_solution",
-        "code_explain",
-        "general",
-    ):
+    if question_type.domain == "coding":
         if pasted_block:
             produce_line = (
                 "Produce one DrawingStage in **code-map** mode using the user-supplied "
@@ -465,8 +462,6 @@ def build_drawing_stage_human_message(
 
 def resolve_drawing_stage_system(question_type: QuestionTypeInfo) -> str:
     """Pick trunk vs code-map system prompt from classifier output."""
-    if question_type.domain == "coding" and question_type.subtype == "loop_trace":
-        return DRAWING_STAGE_SYSTEM
     if question_type.domain == "coding":
         return DRAWING_STAGE_CODE_MAP_SYSTEM
     return DRAWING_STAGE_SYSTEM

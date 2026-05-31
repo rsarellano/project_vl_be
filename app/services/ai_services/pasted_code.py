@@ -20,9 +20,45 @@ _IMPLEMENT_KEYWORDS = (
     "solve ",
     "leetcode",
     "create a function",
+    "create a sample",
+    "create sample",
     "build a function",
     "how do i solve",
     "complete the function",
+    "sample implementation",
+    "show me how to code",
+    "generate code",
+)
+
+_CODING_LANGUAGE_HINTS = (
+    " javascript",
+    " typescript",
+    " python",
+    " java",
+    " c++",
+    " golang",
+    " rust",
+    " in js",
+    " in ts",
+    " in py",
+    " in python",
+    " in javascript",
+    " in typescript",
+)
+
+_ALGO_HINTS = (
+    "two sum",
+    "binary search",
+    "linked list",
+    "hash map",
+    "dynamic programming",
+    "fibonacci",
+    "bubble sort",
+    "merge sort",
+    "reverse string",
+    "palindrome",
+    "valid parentheses",
+    "max subarray",
 )
 
 _CODE_LINE_MARKERS = (
@@ -54,6 +90,48 @@ def user_asked_to_implement(prompt: str) -> bool:
     """True when the user wants a new solution written, not an explanation of pasted code."""
     text = (prompt or "").strip().lower()
     return any(keyword in text for keyword in _IMPLEMENT_KEYWORDS)
+
+
+def looks_like_coding_request(prompt: str) -> bool:
+    """True when the user wants a code explanation or solution (not math trunk layout)."""
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    if looks_like_pasted_code(text):
+        return True
+
+    lower = text.lower()
+    if any(hint in lower for hint in _CODING_LANGUAGE_HINTS):
+        return True
+    if any(hint in lower for hint in _ALGO_HINTS):
+        return True
+    if re.search(r"\b(js|ts|tsx|jsx|py)\b", lower):
+        return True
+
+    coding_verbs = (
+        "code",
+        "function",
+        "program",
+        "algorithm",
+        "leetcode",
+        "javascript",
+        "python",
+        "typescript",
+        "console.log",
+    )
+    has_coding_verb = any(verb in lower for verb in coding_verbs)
+
+    if user_asked_to_implement(text) and has_coding_verb:
+        return True
+    if user_asked_to_implement(text) and any(hint in lower for hint in _ALGO_HINTS):
+        return True
+    if any(
+        phrase in lower
+        for phrase in ("create a sample", "create sample", "sample two sum", "sample code")
+    ):
+        return True
+
+    return False
 
 
 def _line_looks_like_code(line: str) -> bool:

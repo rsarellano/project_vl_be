@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.ai_services.pasted_code import looks_like_pasted_code, user_asked_to_implement
+from app.services.ai_services.pasted_code import (
+    looks_like_coding_request,
+    looks_like_pasted_code,
+    user_asked_to_implement,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,9 @@ def identify_question_type(
         "def ",
         "const ",
         "class ",
+        "two sum",
+        " in js",
+        "sample",
     )
     algebra_markers = ("algebra", "equation", "polynomial", "factor", "quadratic")
     geometry_markers = ("triangle", "circle", "geometry", "angle", "area", "perimeter")
@@ -58,7 +65,11 @@ def identify_question_type(
     if subject_domain == "programming":
         coding_score += 3
 
-    if coding_score >= max(algebra_score, geometry_score, 2) or looks_like_pasted_code(text):
+    if (
+        coding_score >= max(algebra_score, geometry_score, 2)
+        or looks_like_pasted_code(prompt)
+        or looks_like_coding_request(prompt)
+    ):
         loop_trace_keywords = (
             "for loop",
             "while loop",
@@ -74,17 +85,19 @@ def identify_question_type(
         )
         if is_loop_trace:
             subtype = "loop_trace"
-        elif looks_like_pasted_code(text) and not user_asked_to_implement(text):
+        elif looks_like_pasted_code(prompt) and not user_asked_to_implement(prompt):
             subtype = "code_explain"
         else:
             subtype = "code_solution"
         confidence = min(
             0.98,
-            0.45 + max(coding_score, 3 if looks_like_pasted_code(text) else 0) * 0.1,
+            0.45 + max(coding_score, 3 if looks_like_pasted_code(prompt) else 0) * 0.1,
         )
         loop_signals = [f"coding_score={coding_score}", f"loop_trace={is_loop_trace}"]
-        if looks_like_pasted_code(text):
+        if looks_like_pasted_code(prompt):
             loop_signals.append("pasted_code")
+        if looks_like_coding_request(prompt):
+            loop_signals.append("coding_request")
         return QuestionTypeInfo(
             domain="coding",
             subtype=subtype,

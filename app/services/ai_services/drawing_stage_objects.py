@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.ai_services.pasted_code import extract_pasted_code
+from app.services.ai_services.pasted_code import extract_pasted_code, looks_like_coding_request
 
 # =============================================================================
 # 1. Canonical canvas constants
@@ -274,6 +274,77 @@ def _codes_look_unrelated(expected: list[str], actual: list[str]) -> bool:
     return overlap < 0.35
 
 
+def _upgrade_trunk_coding_to_code_map(stage_payload: dict[str, Any]) -> None:
+    """If the model returned legacy trunk coding layout, convert to code-map."""
+    if _is_code_map_stage(stage_payload):
+        return
+
+    objects = stage_payload.get("objects")
+    if not isinstance(objects, list):
+        return
+
+    code_lines: list[str] = []
+    for obj in objects:
+        if _is_text_item(obj) and obj.get("role") == "code-title":
+            code_lines = _normalize_code_lines(obj.get("text"))
+            break
+
+    if not code_lines:
+        return
+
+    trunk_boxes = [
+        obj
+        for obj in objects
+        if isinstance(obj, dict) and _is_box_item(obj) and not obj.get("linkedPortion")
+    ]
+    if not trunk_boxes:
+        return
+
+    line_count = len(code_lines)
+    box_count = len(trunk_boxes)
+    portions: list[dict[str, Any]] = []
+    linked_boxes: list[dict[str, Any]] = []
+
+    for index, box in enumerate(trunk_boxes):
+        if box_count == 1:
+            start, end = 0, line_count - 1
+        else:
+            start = (index * line_count) // box_count
+            end = ((index + 1) * line_count) // box_count - 1
+            if index == box_count - 1:
+                end = line_count - 1
+        end = max(start, end)
+        portion_id = f"step-{index + 1}"
+        portions.append(
+            {
+                "id": portion_id,
+                "lines": [start, end],
+                **({"label": f"Step {index + 1}"} if box_count > 1 else {}),
+            }
+        )
+        linked_boxes.append(
+            {
+                "id": str(box.get("id") or f"explain-{index + 1}"),
+                "BoxCreation": True,
+                "linkedPortion": portion_id,
+                "text": box.get("text"),
+            }
+        )
+
+    stage_payload["layoutMode"] = "code-map"
+    stage_payload["objects"] = [
+        {
+            "id": "source",
+            "CodeDisplay": True,
+            "language": "javascript",
+            "text": code_lines,
+            "portions": portions,
+        },
+        *linked_boxes,
+    ]
+    stage_payload["connections"] = []
+
+
 def _inject_pasted_code_when_mismatched(
     stage_payload: dict[str, Any],
     prompt: str,
@@ -367,8 +438,8 @@ def _drop_forbidden_top_level(stage_payload: dict[str, Any]) -> None:
 def improve_stage_quality(
     stage_payload: dict[str, Any],
     *,
-    domain: str,  # noqa: ARG001 — kept for callsite stability
-    prompt: str,  # noqa: ARG001 — kept for callsite stability
+    domain: str,
+    prompt: str,
 ) -> dict[str, Any]:
     """Sanitize an LLM payload into the flag-driven contract.
 
@@ -388,6 +459,9 @@ def improve_stage_quality(
     _drop_forbidden_top_level(stage_payload)
     _keep_only_flag_driven_objects(stage_payload)
     _ensure_unique_ids(stage_payload)
+    wants_code_map = domain == "coding" or looks_like_coding_request(prompt)
+    if wants_code_map:
+        _upgrade_trunk_coding_to_code_map(stage_payload)
     _normalize_code_map_stage(stage_payload)
     _inject_pasted_code_when_mismatched(stage_payload, prompt)
     _normalize_code_map_stage(stage_payload)
