@@ -198,14 +198,16 @@ class DrawingStage(BaseModel):
     """Flag-driven drawing stage. The FE owns every coordinate.
 
     Fixed canvas: ``width=1400``, ``height=1250``, ``background="#ffffff"``.
-    ``layoutMode`` selects the renderer: ``trunk`` (horizontal step row) or
-    ``code-map`` (code panel + portion highlights + explanation boxes).
+    ``layoutMode`` selects the renderer:
+
+    - ``code-map`` — code panel + portion highlights (coding domain)
+    - ``math`` / ``science`` / ``trunk`` — horizontal step row (non-code domains)
     """
 
     width: float = Field(_DEFAULT_STAGE_WIDTH, gt=0)
     height: float = Field(_DEFAULT_STAGE_HEIGHT, gt=0)
     background: Optional[str] = _DEFAULT_STAGE_BACKGROUND
-    layoutMode: Optional[Literal["trunk", "code-map"]] = None
+    layoutMode: Optional[Literal["trunk", "code-map", "math", "science"]] = None
     objects: list[DrawingStageObject] = Field(..., min_length=1)
     connections: list[DrawingStageConnection] = Field(default_factory=list)
 

@@ -466,4 +466,13 @@ def improve_stage_quality(
     _inject_pasted_code_when_mismatched(stage_payload, prompt)
     _normalize_code_map_stage(stage_payload)
     _sanitize_connections(stage_payload)
+    if not wants_code_map and not any(
+        o.get("CodeDisplay") is True for o in stage_payload.get("objects", []) if isinstance(o, dict)
+    ):
+        if domain == "science":
+            stage_payload["layoutMode"] = "science"
+        elif domain == "math":
+            stage_payload["layoutMode"] = "math"
+        elif stage_payload.get("layoutMode") not in ("math", "science", "trunk"):
+            stage_payload["layoutMode"] = "trunk"
     return stage_payload

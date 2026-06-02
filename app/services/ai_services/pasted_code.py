@@ -11,6 +11,8 @@ class PastedCode:
     lines: list[str]
     language: str
 
+MAX_PASTED_CODE_LINES = 80
+
 
 _IMPLEMENT_KEYWORDS = (
     "implement ",
@@ -174,8 +176,15 @@ def looks_like_pasted_code(prompt: str) -> bool:
     return extract_pasted_code(prompt) is not None
 
 
-def extract_pasted_code(prompt: str) -> PastedCode | None:
-    """Return extracted code lines and a language hint, or None."""
+def _cap_code_lines(lines: list[str]) -> list[str]:
+    """Keep code-map payloads snippet-sized for rendering and model stability."""
+    if len(lines) <= MAX_PASTED_CODE_LINES:
+        return lines
+    return lines[:MAX_PASTED_CODE_LINES]
+
+
+def _extract_raw_code_lines(prompt: str) -> list[str] | None:
+    """Extract candidate code lines without applying snippet caps."""
     text = (prompt or "").strip()
     if not text:
         return None
@@ -190,10 +199,7 @@ def extract_pasted_code(prompt: str) -> PastedCode | None:
         if body.strip():
             lines = body.splitlines()
             if len(lines) >= 2:
-                return PastedCode(
-                    lines=lines,
-                    language=_infer_language(body, fence.group(1)),
-                )
+                return lines
 
     lines = text.splitlines()
     if len(lines) < 3:
@@ -202,6 +208,37 @@ def extract_pasted_code(prompt: str) -> PastedCode | None:
     code_like = sum(1 for line in lines if _line_looks_like_code(line))
     if code_like < max(3, int(len(lines) * 0.55)):
         return None
+
+    return lines
+
+
+def pasted_code_line_count(prompt: str) -> int | None:
+    """Return detected pasted/typed code line count, or None when not code."""
+    lines = _extract_raw_code_lines(prompt)
+    if lines is None:
+        return None
+    return len(lines)
+
+
+def extract_pasted_code(prompt: str) -> PastedCode | None:
+    """Return extracted code lines and a language hint, or None."""
+    raw_lines = _extract_raw_code_lines(prompt)
+    if not raw_lines:
+        return None
+    text = (prompt or "").strip()
+    lines = _cap_code_lines(raw_lines)
+
+    fence = re.search(
+        r"```(?:([\w+-]+)\s*)?\n(.*?)```",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if fence:
+        body = fence.group(2).rstrip("\n")
+        return PastedCode(
+            lines=lines,
+            language=_infer_language(body, fence.group(1)),
+        )
 
     joined = "\n".join(lines)
     return PastedCode(lines=lines, language=_infer_language(joined))

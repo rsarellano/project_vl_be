@@ -17,6 +17,10 @@ from app.services.ai_services.drawing_stage_prompts import (
     build_drawing_stage_human_message,
     resolve_drawing_stage_system,
 )
+from app.services.ai_services.pasted_code import (
+    MAX_PASTED_CODE_LINES,
+    pasted_code_line_count,
+)
 from app.services.ai_services.question_type_identifier import identify_question_type
 
 
@@ -66,6 +70,13 @@ async def answer_user_prompt(
     cleaned = (prompt or "").strip()
     if not cleaned:
         raise ValueError("Prompt must not be empty.")
+
+    code_lines = pasted_code_line_count(cleaned)
+    if code_lines is not None and code_lines > MAX_PASTED_CODE_LINES:
+        raise ValueError(
+            f"Please only provide a coding snippet with max of {MAX_PASTED_CODE_LINES} lines of code."
+        )
+
     api_key = _openai_api_key()
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not configured.")
