@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.ai_services.drawing_stage.math.algebra_simplify import looks_like_simplify_expression
 from app.services.ai_services.pasted_code import extract_pasted_code
 from app.services.ai_services.question_type_identifier import QuestionTypeInfo
 
@@ -43,6 +44,17 @@ def build_drawing_stage_human_message(
         produce = f'Produce DrawingStage (layoutMode="{spec.layout_mode}").'
 
     hint = spec.human_hint
+    if (
+        spec.domain == "math"
+        and spec.subtype == "algebra"
+        and looks_like_simplify_expression(p)
+    ):
+        hint = (
+            "This is a simplify-expression task. Box 1 lists all groups. Then separate boxes: "
+            "combine variable terms (show arithmetic, e.g. 4x + 2x = 6x), combine constants "
+            "(show arithmetic, e.g. 5 - 1 = 4), put groups together, then simplified form.\n\n"
+            f"{hint}"
+        )
     hint_block = f"{hint}\n\n" if hint else ""
 
     return (

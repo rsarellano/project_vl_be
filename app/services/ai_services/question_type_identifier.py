@@ -1,14 +1,52 @@
-"""Keyword classifier routing prompts to drawing-stage domain modules."""
+"""Question-type routing — LLM classifier with keyword heuristic fallback."""
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+from app.schemas.ai_schemas.question_type_schema import QuestionTypeClassification
 from app.services.ai_services.pasted_code import (
     looks_like_coding_request,
     looks_like_pasted_code,
     user_asked_to_implement,
 )
+
+_VARIABLE_TERM = re.compile(r"\d+\s*[a-zA-Z]|[a-zA-Z]\s*[\+\-\*\/]|\b[a-zA-Z]\s*\d")
+
+_VALID_SUBTYPES: dict[str, frozenset[str]] = {
+    "math": frozenset({"algebra", "geometry", "arithmetic", "general"}),
+    "coding": frozenset({"code_solution", "code_explain", "loop_trace", "general"}),
+    "science": frozenset({"biology", "chemistry", "physics", "general"}),
+}
+
+_CLASSIFIER_SYSTEM = """\
+You classify user prompts for a visual learning diagram engine.
+Return exactly one domain and subtype.
+
+Domains and subtypes:
+- math.algebra — equations, solving for variables, simplifying expressions with variables \
+(like terms), factoring, symbolic manipulation. Example: "Simplify 4m+5+2m-1" is algebra.
+- math.geometry — shapes, area, perimeter, volume, angles, coordinates, proofs about figures.
+- math.arithmetic — numeric computation only (no variables): fractions, percents, order of \
+operations, word problems with pure numbers.
+- math.general — other math not clearly algebra/geometry/arithmetic.
+- coding.code_explain — user pasted existing code to understand (explain this code).
+- coding.loop_trace — trace a loop iteration-by-iteration.
+- coding.code_solution — implement/write/solve a programming problem.
+- coding.general — other programming topics.
+- science.biology | science.chemistry | science.physics | science.general.
+
+Rules:
+- Expressions with variables (x, m, n, etc.) to simplify or rewrite → math.algebra, NOT arithmetic.
+- "Solve for x" or equations → math.algebra.
+- Only classify as arithmetic when the task is numeric with no variables.
+- Prefer the most specific subtype; use "general" only when unclear.
+"""
 
 
 @dataclass(frozen=True)
@@ -19,13 +57,40 @@ class QuestionTypeInfo:
     signals: list[str]
 
 
-def identify_question_type(
+def _classifier_model() -> str:
+    return os.getenv("OPENAI_CLASSIFIER_MODEL", os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o-mini"))
+
+
+def _normalize_subtype(domain: str, subtype: str) -> str:
+    allowed = _VALID_SUBTYPES.get(domain)
+    if not allowed:
+        return "general"
+    cleaned = (subtype or "").strip().lower().replace("-", "_")
+    if cleaned in allowed:
+        return cleaned
+    return "general"
+
+
+def _coding_paste_override(prompt: str) -> QuestionTypeInfo | None:
+    """High-confidence routing when the user pasted code to explain."""
+    if not looks_like_pasted_code(prompt):
+        return None
+    subtype = "code_solution" if user_asked_to_implement(prompt) else "code_explain"
+    return QuestionTypeInfo(
+        domain="coding",
+        subtype=subtype,
+        confidence=0.95,
+        signals=["classifier=paste_override", f"subtype={subtype}"],
+    )
+
+
+def identify_question_type_heuristic(
     prompt: str,
     *,
     usage_context: str | None = None,
     subject_domain: str | None = None,
 ) -> QuestionTypeInfo:
-    """Heuristic routing — no extra LLM call. Domains: coding, math, science."""
+    """Keyword routing fallback — no LLM call."""
     text = (prompt or "").strip().lower()
     signals: list[str] = []
 
@@ -84,6 +149,9 @@ def identify_question_type(
 
     coding_score = sum(1 for marker in coding_markers if marker in text)
     algebra_score = sum(1 for marker in algebra_markers if marker in text)
+    if _VARIABLE_TERM.search(text):
+        algebra_score += 3
+        signals.append("variable_terms")
     geometry_score = sum(1 for marker in geometry_markers if marker in text)
     arithmetic_score = sum(1 for marker in arithmetic_markers if marker in text)
     science_score = sum(1 for marker in science_markers if marker in text)
@@ -204,3 +272,94 @@ def identify_question_type(
         confidence=0.35,
         signals=signals + ["fallback=math_general"],
     )
+
+
+def identify_question_type(
+    prompt: str,
+    *,
+    usage_context: str | None = None,
+    subject_domain: str | None = None,
+) -> QuestionTypeInfo:
+    """Sync entry — heuristic only (tests and LLM fallback)."""
+    return identify_question_type_heuristic(
+        prompt,
+        usage_context=usage_context,
+        subject_domain=subject_domain,
+    )
+
+
+async def identify_question_type_with_llm(
+    prompt: str,
+    *,
+    usage_context: str | None = None,
+    subject_domain: str | None = None,
+    api_key: str,
+) -> QuestionTypeInfo:
+    """LLM classifier with paste override and keyword fallback."""
+    cleaned = (prompt or "").strip()
+    base_signals: list[str] = []
+    if subject_domain:
+        base_signals.append(f"subject_domain={subject_domain}")
+    if usage_context:
+        base_signals.append(f"usage_context={usage_context}")
+
+    paste_override = _coding_paste_override(cleaned)
+    if paste_override:
+        return QuestionTypeInfo(
+            domain=paste_override.domain,
+            subtype=paste_override.subtype,
+            confidence=paste_override.confidence,
+            signals=base_signals + paste_override.signals,
+        )
+
+    heuristic = identify_question_type_heuristic(
+        cleaned,
+        usage_context=usage_context,
+        subject_domain=subject_domain,
+    )
+
+    user_lines = [f"User prompt: {cleaned}"]
+    if subject_domain:
+        user_lines.append(f"Learner subject preference: {subject_domain}")
+    if usage_context:
+        user_lines.append(f"Usage context: {usage_context}")
+
+    try:
+        llm = ChatOpenAI(
+            temperature=0,
+            model=_classifier_model(),
+            api_key=api_key,
+        )
+        structured = llm.with_structured_output(
+            QuestionTypeClassification,
+            method="function_calling",
+        )
+        result = await structured.ainvoke(
+            [
+                SystemMessage(content=_CLASSIFIER_SYSTEM),
+                HumanMessage(content="\n".join(user_lines)),
+            ],
+        )
+        if result is None:
+            raise ValueError("Classifier returned empty result")
+
+        domain = result.domain
+        subtype = _normalize_subtype(domain, result.subtype)
+        rationale = (result.rationale or "").strip()
+        signals = base_signals + ["classifier=llm", f"subtype={subtype}"]
+        if rationale:
+            signals.append(f"rationale={rationale[:120]}")
+
+        return QuestionTypeInfo(
+            domain=domain,
+            subtype=subtype,
+            confidence=float(result.confidence),
+            signals=signals,
+        )
+    except Exception as exc:
+        return QuestionTypeInfo(
+            domain=heuristic.domain,
+            subtype=heuristic.subtype,
+            confidence=heuristic.confidence,
+            signals=base_signals + heuristic.signals + [f"classifier=heuristic_fallback", f"error={exc}"],
+        )

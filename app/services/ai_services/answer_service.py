@@ -13,6 +13,10 @@ from langchain_openai import ChatOpenAI
 from app.schemas.ai_schemas.answer_schema import AnswerRead
 from app.schemas.infographics_schema import DrawingStage
 from app.services.ai_services.drawing_stage_objects import improve_stage_quality
+from app.services.ai_services.drawing_stage.math.algebra_simplify import (
+    build_simplify_expression_stage,
+    try_parse_simplify_prompt,
+)
 from app.services.ai_services.drawing_stage_prompts import (
     build_drawing_stage_human_message,
     resolve_drawing_stage_system,
@@ -21,7 +25,7 @@ from app.services.ai_services.pasted_code import (
     MAX_PASTED_CODE_LINES,
     pasted_code_line_count,
 )
-from app.services.ai_services.question_type_identifier import identify_question_type
+from app.services.ai_services.question_type_identifier import identify_question_type_with_llm
 
 
 def _openai_api_key() -> str | None:
@@ -81,31 +85,39 @@ async def answer_user_prompt(
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not configured.")
 
-    question_type = identify_question_type(
+    question_type = await identify_question_type_with_llm(
         cleaned,
         usage_context=usage_context,
         subject_domain=subject_domain,
+        api_key=api_key,
     )
 
-    llm = ChatOpenAI(temperature=0.2, model=_answer_model(), api_key=api_key)
-    structured = llm.with_structured_output(DrawingStage, method="function_calling")
+    parsed_simplify = None
+    if question_type.domain == "math" and question_type.subtype == "algebra":
+        parsed_simplify = try_parse_simplify_prompt(cleaned)
 
-    messages = [
-        SystemMessage(content=resolve_drawing_stage_system(question_type)),
-        HumanMessage(
-            content=build_drawing_stage_human_message(
-                cleaned,
-                question_type,
-                usage_context=usage_context,
+    if parsed_simplify is not None:
+        stage_payload = build_simplify_expression_stage(parsed_simplify)
+    else:
+        llm = ChatOpenAI(temperature=0, model=_answer_model(), api_key=api_key)
+        structured = llm.with_structured_output(DrawingStage, method="function_calling")
+
+        messages = [
+            SystemMessage(content=resolve_drawing_stage_system(question_type)),
+            HumanMessage(
+                content=build_drawing_stage_human_message(
+                    cleaned,
+                    question_type,
+                    usage_context=usage_context,
+                ),
             ),
-        ),
-    ]
+        ]
 
-    stage_model = await structured.ainvoke(messages)
-    if stage_model is None:
-        raise ValueError("Model did not return valid drawing stage: empty result")
+        stage_model = await structured.ainvoke(messages)
+        if stage_model is None:
+            raise ValueError("Model did not return valid drawing stage: empty result")
 
-    stage_payload = stage_model.model_dump(mode="json", by_alias=True)
+        stage_payload = stage_model.model_dump(mode="json", by_alias=True)
     stage_payload = improve_stage_quality(
         stage_payload,
         domain=question_type.domain,
