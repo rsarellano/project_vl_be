@@ -99,6 +99,75 @@ def _is_code_map_stage(stage_payload: dict[str, Any]) -> bool:
     return any(_is_code_display_item(obj) for obj in objects if isinstance(obj, dict))
 
 
+def coerce_text_field(value: Any) -> str | list[str] | None:
+    """Coerce LLM ``text`` to plain string or string[] (never beat objects)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        nested = value.get("text")
+        if nested is not None:
+            return coerce_text_field(nested)
+        return None
+    if isinstance(value, list):
+        lines: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                stripped = item.strip()
+                if stripped:
+                    lines.append(stripped)
+            elif isinstance(item, dict):
+                coerced = coerce_text_field(item)
+                if isinstance(coerced, str) and coerced.strip():
+                    lines.append(coerced.strip())
+                elif isinstance(coerced, list):
+                    lines.extend(line for line in coerced if line.strip())
+        return lines if lines else None
+    stripped = str(value).strip()
+    return stripped or None
+
+
+_VALID_TEXT_ROLES = frozenset({"code-title", "objective", "console"})
+
+
+def patch_llm_objects_before_validation(objects: list[Any]) -> list[Any]:
+    """Fix common LLM shape mistakes before Pydantic validates the stage."""
+    patched: list[dict[str, Any]] = []
+    for item in objects:
+        if not isinstance(item, dict):
+            continue
+        o = dict(item)
+        if "text" in o:
+            o["text"] = coerce_text_field(o.get("text"))
+        patched.append(o)
+
+    text_items = [o for o in patched if o.get("TextCreation") is True]
+    assigned_title = any(o.get("role") == "code-title" for o in text_items)
+    assigned_objective = any(o.get("role") == "objective" for o in text_items)
+    unassigned = [
+        o for o in text_items if o.get("role") not in _VALID_TEXT_ROLES
+    ]
+
+    for idx, obj in enumerate(unassigned):
+        if not assigned_title:
+            obj["role"] = "code-title"
+            assigned_title = True
+        elif not assigned_objective:
+            obj["role"] = "objective"
+            assigned_objective = True
+        else:
+            obj.pop("TextCreation", None)
+
+    return [
+        o
+        for o in patched
+        if not (
+            o.get("TextCreation") is True and o.get("role") not in _VALID_TEXT_ROLES
+        )
+    ]
+
+
 def _strip_forbidden_item_keys(obj: dict[str, Any]) -> None:
     for key in _FORBIDDEN_ITEM_KEYS:
         obj.pop(key, None)
@@ -118,6 +187,8 @@ def _keep_only_flag_driven_objects(stage_payload: dict[str, Any]) -> None:
         if not (_is_box_item(obj) or _is_text_item(obj) or _is_code_display_item(obj)):
             continue
         _strip_forbidden_item_keys(obj)
+        if "text" in obj:
+            obj["text"] = coerce_text_field(obj.get("text"))
         if _is_box_item(obj):
             for key in _BOX_FORBIDDEN_KEYS:
                 obj.pop(key, None)

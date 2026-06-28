@@ -10,8 +10,11 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from pydantic import ValidationError
+
 from app.schemas.ai_schemas.answer_schema import AnswerRead
 from app.schemas.infographics_schema import DrawingStage
+from app.services.ai_services.drawing_stage_errors import friendly_diagram_generation_error
 from app.services.ai_services.drawing_stage_objects import improve_stage_quality
 from app.services.ai_services.drawing_stage.math.algebra_simplify import (
     build_simplify_expression_stage,
@@ -24,6 +27,10 @@ from app.services.ai_services.drawing_stage_prompts import (
 from app.services.ai_services.pasted_code import (
     MAX_PASTED_CODE_LINES,
     pasted_code_line_count,
+)
+from app.services.ai_services.pasted_equation_image import (
+    extract_equation_from_image,
+    merge_prompt_with_equation,
 )
 from app.services.ai_services.question_type_identifier import identify_question_type_with_llm
 
@@ -69,9 +76,25 @@ async def answer_user_prompt(
     *,
     usage_context: str | None = None,
     subject_domain: str | None = None,
+    equation_image: str | None = None,
 ) -> AnswerRead:
     """Call the LLM with structured ``DrawingStage`` output and return ``AnswerRead``."""
-    cleaned = (prompt or "").strip()
+    user_text = (prompt or "").strip()
+    extracted_equation: str | None = None
+
+    api_key = _openai_api_key()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not configured.")
+
+    if equation_image and equation_image.strip():
+        extracted_equation = await extract_equation_from_image(
+            equation_image,
+            api_key=api_key,
+        )
+        cleaned = merge_prompt_with_equation(user_text, extracted_equation)
+    else:
+        cleaned = user_text
+
     if not cleaned:
         raise ValueError("Prompt must not be empty.")
 
@@ -80,10 +103,6 @@ async def answer_user_prompt(
         raise ValueError(
             f"Please only provide a coding snippet with max of {MAX_PASTED_CODE_LINES} lines of code."
         )
-
-    api_key = _openai_api_key()
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY is not configured.")
 
     question_type = await identify_question_type_with_llm(
         cleaned,
@@ -113,7 +132,25 @@ async def answer_user_prompt(
             ),
         ]
 
-        stage_model = await structured.ainvoke(messages)
+        try:
+            stage_model = await structured.ainvoke(messages)
+        except ValidationError as exc:
+            raise ValueError(
+                friendly_diagram_generation_error(
+                    domain=question_type.domain,
+                    subtype=question_type.subtype,
+                )
+            ) from exc
+        except Exception as exc:
+            if "validation error" in str(exc).lower():
+                raise ValueError(
+                    friendly_diagram_generation_error(
+                        domain=question_type.domain,
+                        subtype=question_type.subtype,
+                    )
+                ) from exc
+            raise
+
         if stage_model is None:
             raise ValueError("Model did not return valid drawing stage: empty result")
 
@@ -129,6 +166,7 @@ async def answer_user_prompt(
         id=uuid4(),
         prompt=cleaned,
         answer=answer_text[:8000],
+        extracted_equation=extracted_equation,
         question_type=f"{question_type.domain}.{question_type.subtype}",
         blueprint=None,
         stage=stage_payload,

@@ -23,6 +23,7 @@ async def create_answer(data: AnswerCreate) -> AnswerRead:
             data.prompt,
             usage_context=data.usage_context,
             subject_domain=data.subject_domain,
+            equation_image=data.equation_image,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

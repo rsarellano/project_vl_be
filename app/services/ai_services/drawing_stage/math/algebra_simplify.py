@@ -209,6 +209,41 @@ def try_parse_simplify_prompt(prompt: str) -> ParsedSimplifyExpression | None:
     return _parse_simplify_expression(expr)
 
 
+def _build_variable_terms_derivation(
+    variable: str,
+    variable_terms: tuple[str, ...],
+    combined_variable: str,
+    from_step_id: str,
+) -> dict[str, Any]:
+    work = _format_variable_work(variable_terms, combined_variable)
+    lhs = work.split("=", 1)[0].strip()
+    return {
+        "fromStepId": from_step_id,
+        "beats": [
+            {"type": "note", "text": f"Combine the {variable} terms on the left."},
+            {"type": "expression", "text": lhs, "id": "f1"},
+            {"type": "arrow", "direction": "down"},
+            {
+                "type": "explain",
+                "text": (
+                    f"Like terms share the same variable ({variable}). "
+                    "We add their coefficients — the numbers in front."
+                ),
+            },
+            {
+                "type": "explain",
+                "text": (
+                    f"Adding the coefficients gives {combined_variable}. "
+                    "Only the number in front changes; the variable stays the same."
+                ),
+            },
+            {"type": "arrow", "direction": "down"},
+            {"type": "note", "text": f"Result: {combined_variable}"},
+            {"type": "expression", "text": combined_variable, "id": "f2"},
+        ],
+    }
+
+
 def build_simplify_expression_stage(parsed: ParsedSimplifyExpression) -> dict[str, Any]:
     """Build a complete DrawingStage for a parseable simplify-expression prompt."""
     title = _format_display_expression(parsed.raw)
@@ -227,11 +262,18 @@ def build_simplify_expression_stage(parsed: ParsedSimplifyExpression) -> dict[st
     step_id = 2
 
     if len(parsed.variable_terms) > 1:
+        prev_id = boxes[-1]["id"]
         boxes.append(
             {
                 "id": f"step-{step_id}",
                 "BoxCreation": True,
                 "text": [f"Combine {parsed.variable} terms", "", var_work],
+                "derivation": _build_variable_terms_derivation(
+                    parsed.variable,
+                    parsed.variable_terms,
+                    parsed.combined_variable,
+                    str(prev_id),
+                ),
             }
         )
         step_id += 1

@@ -27,6 +27,8 @@ from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.services.ai_services.drawing_stage_objects import patch_llm_objects_before_validation
+
 # =============================================================================
 # 1. Module internals — defaults + helpers for validators
 # =============================================================================
@@ -98,12 +100,95 @@ class DrawingStageBaseObject(BaseModel):
 # =============================================================================
 
 
+class MathDerivationTransition(BaseModel):
+    type: Literal["arrow"] = "arrow"
+    direction: Literal["down", "right"] = "down"
+
+
+class MathDerivationFrame(BaseModel):
+    id: str = Field(..., min_length=1)
+    note: Optional[str] = None
+    expression: Optional[str] = None
+    transition: Optional[MathDerivationTransition] = None
+
+
+class MathDerivationBeatNote(BaseModel):
+    type: Literal["note"] = "note"
+    text: str = Field(..., min_length=1)
+
+
+class MathDerivationBeatExpression(BaseModel):
+    type: Literal["expression"] = "expression"
+    text: str = Field(..., min_length=1)
+    id: Optional[str] = None
+
+
+class MathDerivationBeatArrow(BaseModel):
+    type: Literal["arrow"] = "arrow"
+    direction: Literal["down", "right"] = "down"
+
+
+class MathDerivationBeatExplain(BaseModel):
+    type: Literal["explain"] = "explain"
+    text: str = Field(..., min_length=1)
+
+
+class MathDerivationBeatMotion(BaseModel):
+    type: Literal["motion"] = "motion"
+    text: str = Field(..., min_length=1)
+    id: Optional[str] = None
+    term: str = Field(..., min_length=1)
+    motion: Literal["slide_right", "slide_left", "highlight", "fade_in"] = "slide_right"
+
+
+class MathDerivationMotionStep(BaseModel):
+    label: Optional[str] = None
+    expression: str = Field(..., min_length=1)
+    term: Optional[str] = None
+    motion: Literal["slide_right", "slide_left", "highlight", "fade_in"] = "highlight"
+
+
+class MathDerivationBeatMotionStage(BaseModel):
+    type: Literal["motion_stage"] = "motion_stage"
+    id: Optional[str] = None
+    steps: list[MathDerivationMotionStep] = Field(default_factory=list)
+    # Animated yellow box (katex-simulator morph). When omitted, the frontend
+    # derives from/to from the surrounding ``expression`` beats.
+    from_: Optional[str] = Field(default=None, alias="from")
+    to: Optional[str] = None
+    frames: Optional[list[str]] = None
+    operation: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+MathDerivationBeat = Union[
+    MathDerivationBeatNote,
+    MathDerivationBeatExpression,
+    MathDerivationBeatArrow,
+    MathDerivationBeatExplain,
+    MathDerivationBeatMotion,
+    MathDerivationBeatMotionStage,
+]
+
+
+class MathStepDerivation(BaseModel):
+    """Layer 2: how the previous step box became this step (beat script)."""
+
+    fromStepId: Optional[str] = None
+    beats: list[MathDerivationBeat] = Field(default_factory=list)
+    frames: list[MathDerivationFrame] = Field(default_factory=list)
+
+
 class DrawingStageBoxCreationObject(DrawingStageBaseObject):
-    """Step card. AI supplies ``BoxCreation: true`` + ``text`` only.
+    """Step card. AI supplies ``BoxCreation: true`` + ``text`` (+ optional ``derivation``).
 
     The frontend (``boxCreation.tsx``) owns position, size, radius, fill,
     stroke, padding, fontSize, lineHeight, animation timing — everything
     visual. The model is not allowed to set any of those fields.
+
+    For math layout, emit ``derivation.beats`` on each step that changes the math
+    (layer-2 "How we got here" panel).
 
     In ``code-map`` layout, optional ``linkedPortion`` ties the box to a
     ``CodeDisplay.portions[]`` entry; the frontend positions it beside that
@@ -113,6 +198,7 @@ class DrawingStageBoxCreationObject(DrawingStageBaseObject):
     BoxCreation: Literal[True]
     text: Optional[Union[str, list[str]]] = None
     linkedPortion: Optional[str] = None
+    derivation: Optional[MathStepDerivation] = None
 
 
 class CodePortion(BaseModel):
@@ -228,8 +314,9 @@ class DrawingStage(BaseModel):
         raw_objects = out.get("objects")
         if not isinstance(raw_objects, list):
             return out
+        sanitized = patch_llm_objects_before_validation(raw_objects)
         patched: list[Any] = []
-        for idx, item in enumerate(raw_objects):
+        for idx, item in enumerate(sanitized):
             if not isinstance(item, dict):
                 patched.append(item)
                 continue

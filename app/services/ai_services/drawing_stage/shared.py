@@ -33,6 +33,10 @@ def build_usage_context_guidance(usage_context: str | None) -> str:
             "Audience: personal learner. Use approachable tone, everyday examples, "
             "and practical takeaways without jargon."
         ),
+        "hobby": (
+            "Audience: hobby learner. Keep it engaging and exploratory; use relatable "
+            "examples from creative or leisure interests without sounding like homework."
+        ),
         "professional": (
             "Audience: professional. Prefer workplace scenarios, concise steps, "
             "and skills applicable on the job."
