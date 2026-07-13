@@ -172,3 +172,67 @@ async def answer_user_prompt(
         stage=stage_payload,
         created_at=datetime.now(timezone.utc),
     )
+
+
+import json
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.ai_models.step_follow_up import StepFollowUp
+from app.schemas.ai_schemas.answer_schema import StepFollowUpRequest
+
+async def answer_step_follow_up(data: StepFollowUpRequest, db: AsyncSession) -> str:
+    api_key = _openai_api_key()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not configured.")
+
+    # Fetch chat history for this step
+    stmt = select(StepFollowUp).where(
+        StepFollowUp.answer_id == data.answer_id,
+        StepFollowUp.step_id == data.step_id
+    ).order_by(StepFollowUp.created_at)
+    result = await db.execute(stmt)
+    history = result.scalars().all()
+
+    # Extract the step data to give to the LLM
+    step_data = next((obj for obj in data.stage.objects if str(obj.id) == data.step_id), None)
+    step_json = step_data.model_dump_json(indent=2) if step_data else "Step data not found."
+
+    system_prompt = (
+        "You are an expert AI tutor explaining a specific step in a math or coding problem.\n"
+        "The user is asking a follow-up question about this specific step in the derivation.\n"
+        "Keep your answer extremely concise, educational, and direct. Use plain text or LaTeX (without $ delimiters if it's pure math)."
+    )
+
+    history_text = ""
+    if history:
+        for past in history:
+            history_text += f"User: {past.question}\nAssistant: {past.answer}\n\n"
+
+    human_content = (
+        f"Original Problem: {data.original_prompt or 'N/A'}\n\n"
+        f"Step Data (JSON):\n{step_json}\n\n"
+        f"Chat History:\n{history_text if history else 'None'}\n\n"
+        f"User's new question: {data.question}"
+    )
+
+    llm = ChatOpenAI(temperature=0, model=_answer_model(), api_key=api_key)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_content),
+    ]
+
+    response = await llm.ainvoke(messages)
+    answer_text = str(response.content)
+
+    # Save to DB
+    new_follow_up = StepFollowUp(
+        answer_id=data.answer_id,
+        step_id=data.step_id,
+        question=data.question,
+        answer=answer_text
+    )
+    db.add(new_follow_up)
+    await db.commit()
+
+    return answer_text
+

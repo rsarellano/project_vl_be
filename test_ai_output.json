@@ -1,0 +1,186 @@
+{
+  "id": "b526ac64-83bc-4b12-8c40-17bf25e990ff",
+  "prompt": "Find the opposite side of a right triangle with hypotenuse 10 and angle 30 degrees",
+  "answer": "Identify knowns → sin(30°) = x/10 → x = 10 × sin(30°) → x = 5",
+  "extracted_equation": null,
+  "question_type": "math.trigonometry",
+  "blueprint": null,
+  "stage": {
+    "width": 1400.0,
+    "height": 1250.0,
+    "background": "#ffffff",
+    "layoutMode": "math",
+    "objects": [
+      {
+        "id": "problem",
+        "TextCreation": true,
+        "role": "code-title",
+        "text": [
+          "Right triangle",
+          "hypotenuse = 10",
+          "angle = 30°",
+          "Find the opposite side"
+        ]
+      },
+      {
+        "id": "objective",
+        "TextCreation": true,
+        "role": "objective",
+        "text": [
+          "Objective:",
+          "Find the missing side using trigonometry"
+        ]
+      },
+      {
+        "id": "step-1",
+        "BoxCreation": true,
+        "text": [
+          "Identify knowns",
+          "θ = 30°, H = 10, x = ?"
+        ],
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": null,
+          "beats": [
+            {
+              "type": "note",
+              "text": "Draw the right triangle and label the sides:"
+            },
+            {
+              "type": "trig_scene",
+              "id": null,
+              "angle": 30.0,
+              "angleLabel": null,
+              "hypotenuseLabel": "10",
+              "oppositeLabel": "x (Unknown)",
+              "adjacentLabel": "Adjacent",
+              "formula": "\\sin(θ) = Opposite / Hypotenuse",
+              "solution": null,
+              "unknownSide": "opposite",
+              "ratio": "sin"
+            },
+            {
+              "type": "explain",
+              "text": "Why we use Sine: We want the Opposite side and we know the Hypotenuse. Sine = Opposite / Hypotenuse (SOH) connects what we want with what we know."
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-2",
+        "BoxCreation": true,
+        "text": "sin(30°) = x/10",
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": null,
+          "beats": [
+            {
+              "type": "note",
+              "text": "Set up the equation using the sine ratio:"
+            },
+            {
+              "type": "explain",
+              "text": "We have the Opposite (x) and the Hypotenuse (10), so we use SOH: sin(θ) = Opposite / Hypotenuse."
+            },
+            {
+              "type": "expression",
+              "text": "sin(30°) = x/10",
+              "id": null
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-3",
+        "BoxCreation": true,
+        "text": "x = 10 × sin(30°)",
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": null,
+          "beats": [
+            {
+              "type": "note",
+              "text": "Multiply both sides by 10:"
+            },
+            {
+              "type": "motion_stage",
+              "id": null,
+              "steps": [],
+              "from_": "sin(30°) = x/10",
+              "to": "x = 10 × sin(30°)",
+              "frames": null,
+              "operation": "× 10"
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-4",
+        "BoxCreation": true,
+        "text": "x = 5",
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": null,
+          "beats": [
+            {
+              "type": "note",
+              "text": "Evaluate sin(30°) = 0.5:"
+            },
+            {
+              "type": "expression",
+              "text": "x = 10 × 0.5",
+              "id": null
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "expression",
+              "text": "x = 5",
+              "id": null
+            },
+            {
+              "type": "trig_scene",
+              "id": null,
+              "angle": 30.0,
+              "angleLabel": null,
+              "hypotenuseLabel": "10",
+              "oppositeLabel": "5 ✓",
+              "adjacentLabel": "Adjacent",
+              "formula": null,
+              "solution": "x = 5 units",
+              "unknownSide": null,
+              "ratio": null
+            }
+          ],
+          "frames": []
+        }
+      }
+    ],
+    "connections": [
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-1",
+        "to": "step-2"
+      },
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-2",
+        "to": "step-3"
+      },
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-3",
+        "to": "step-4"
+      }
+    ]
+  },
+  "created_at": "2026-06-29T21:51:47.694739Z"
+}

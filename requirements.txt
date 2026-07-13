@@ -11,3 +11,5 @@ langchain_openai
 asyncpg
 bcrypt
 PyJWT
+python-socketio
+redis

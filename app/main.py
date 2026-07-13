@@ -18,6 +18,7 @@ load_dotenv(_env_path, override=True)
 
 from app.connection.database import init_models
 from app.controllers.main_router import router
+from app.socket_app import socket_app
 
 _api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
 if not _api_key:
@@ -57,6 +58,9 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+# Mount Socket.IO application
+app.mount("/", socket_app)
 
 
 @app.get("/health")

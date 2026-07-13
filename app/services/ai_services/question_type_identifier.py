@@ -19,7 +19,7 @@ from app.services.ai_services.pasted_code import (
 _VARIABLE_TERM = re.compile(r"\d+\s*[a-zA-Z]|[a-zA-Z]\s*[\+\-\*\/]|\b[a-zA-Z]\s*\d")
 
 _VALID_SUBTYPES: dict[str, frozenset[str]] = {
-    "math": frozenset({"algebra", "geometry", "arithmetic", "general"}),
+    "math": frozenset({"algebra", "geometry", "arithmetic", "trigonometry", "general"}),
     "coding": frozenset({"code_solution", "code_explain", "loop_trace", "general"}),
     "science": frozenset({"biology", "chemistry", "physics", "general"}),
 }
@@ -31,10 +31,14 @@ Return exactly one domain and subtype.
 Domains and subtypes:
 - math.algebra — equations, solving for variables, simplifying expressions with variables \
 (like terms), factoring, symbolic manipulation. Example: "Simplify 4m+5+2m-1" is algebra.
-- math.geometry — shapes, area, perimeter, volume, angles, coordinates, proofs about figures.
+- math.trigonometry — right-triangle problems using sin/cos/tan (SOH CAH TOA), finding \
+missing sides or angles, inverse trig (arcsin/arccos/arctan). Example: "Find the opposite \
+side of a right triangle with hypotenuse 10 and angle 30°" is trigonometry.
+- math.geometry — shapes, area, perimeter, volume, angles, coordinates, proofs about figures \
+(NOT trigonometry — use math.trigonometry for sin/cos/tan problems).
 - math.arithmetic — numeric computation only (no variables): fractions, percents, order of \
 operations, word problems with pure numbers.
-- math.general — other math not clearly algebra/geometry/arithmetic.
+- math.general — other math not clearly algebra/geometry/arithmetic/trigonometry.
 - coding.code_explain — user pasted existing code to understand (explain this code).
 - coding.loop_trace — trace a loop iteration-by-iteration.
 - coding.code_solution — implement/write/solve a programming problem.
@@ -44,6 +48,7 @@ operations, word problems with pure numbers.
 Rules:
 - Expressions with variables (x, m, n, etc.) to simplify or rewrite → math.algebra, NOT arithmetic.
 - "Solve for x" or equations → math.algebra.
+- Problems mentioning sin, cos, tan, hypotenuse, opposite, adjacent, SOH CAH TOA → math.trigonometry, NOT geometry.
 - Only classify as arithmetic when the task is numeric with no variables.
 - Prefer the most specific subtype; use "general" only when unclear.
 """
@@ -58,7 +63,7 @@ class QuestionTypeInfo:
 
 
 def _classifier_model() -> str:
-    return os.getenv("OPENAI_CLASSIFIER_MODEL", os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o-mini"))
+    return os.getenv("OPENAI_CLASSIFIER_MODEL", "gpt-4o-mini")
 
 
 def _normalize_subtype(domain: str, subtype: str) -> str:
@@ -121,6 +126,13 @@ def identify_question_type_heuristic(
         "sample",
     )
     algebra_markers = ("algebra", "equation", "polynomial", "factor", "quadratic", "solve for")
+    trigonometry_markers = (
+        "sin", "cos", "tan", "sine", "cosine", "tangent",
+        "hypotenuse", "opposite side", "adjacent side",
+        "soh cah toa", "sohcahtoa", "right triangle angle",
+        "arcsin", "arccos", "arctan", "inverse trig",
+        "trigonometry", "trig",
+    )
     geometry_markers = ("triangle", "circle", "geometry", "angle", "area", "perimeter", "volume")
     arithmetic_markers = ("add", "subtract", "multiply", "divide", "+", "×", "percent", "fraction")
     science_markers = (
@@ -152,10 +164,11 @@ def identify_question_type_heuristic(
     if _VARIABLE_TERM.search(text):
         algebra_score += 3
         signals.append("variable_terms")
+    trigonometry_score = sum(1 for marker in trigonometry_markers if marker in text)
     geometry_score = sum(1 for marker in geometry_markers if marker in text)
     arithmetic_score = sum(1 for marker in arithmetic_markers if marker in text)
     science_score = sum(1 for marker in science_markers if marker in text)
-    math_score = algebra_score + geometry_score + arithmetic_score
+    math_score = algebra_score + geometry_score + arithmetic_score + trigonometry_score
 
     if subject_domain == "programming":
         coding_score += 3
@@ -224,6 +237,15 @@ def identify_question_type_heuristic(
             subtype=subtype,
             confidence=min(0.9, 0.4 + science_score * 0.1),
             signals=signals + [f"science_score={science_score}", f"subtype={subtype}"],
+        )
+
+    # Trigonometry must be checked BEFORE geometry (trig problems mention "triangle" / "angle")
+    if trigonometry_score >= 2:
+        return QuestionTypeInfo(
+            domain="math",
+            subtype="trigonometry",
+            confidence=min(0.9, 0.4 + trigonometry_score * 0.1),
+            signals=signals + [f"trigonometry_score={trigonometry_score}"],
         )
 
     if algebra_score >= geometry_score and algebra_score >= arithmetic_score and algebra_score >= 2:
@@ -317,6 +339,8 @@ async def identify_question_type_with_llm(
         usage_context=usage_context,
         subject_domain=subject_domain,
     )
+    if heuristic.confidence >= 0.85:
+        return heuristic
 
     user_lines = [f"User prompt: {cleaned}"]
     if subject_domain:

@@ -1,0 +1,264 @@
+{
+  "id": "c02b1f2d-7534-4929-bc73-e7f2646ef59e",
+  "prompt": "why is +x appearing on this part?",
+  "answer": "Group like terms → Combine x terms → Combine constants → Put groups together → Simplified Expression",
+  "extracted_equation": null,
+  "question_type": "math.algebra",
+  "blueprint": null,
+  "stage": {
+    "width": 1400.0,
+    "height": 1250.0,
+    "background": "#ffffff",
+    "layoutMode": "math",
+    "objects": [
+      {
+        "id": "problem",
+        "TextCreation": true,
+        "role": "code-title",
+        "text": [
+          "4x + 5 + 2x - 1"
+        ]
+      },
+      {
+        "id": "objective",
+        "TextCreation": true,
+        "role": "objective",
+        "text": [
+          "Objective:",
+          "Simplify the expression"
+        ]
+      },
+      {
+        "id": "step-1",
+        "BoxCreation": true,
+        "text": [
+          "Group like terms",
+          "x terms: 4x, 2x",
+          "constants: 5, -1"
+        ],
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": "problem",
+          "beats": [
+            {
+              "type": "note",
+              "text": "We start from the original equation."
+            },
+            {
+              "type": "expression",
+              "text": "4x + 5 + 2x - 1",
+              "id": null
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "Group like terms."
+            },
+            {
+              "type": "explain",
+              "text": "Identify terms with x and constant terms."
+            },
+            {
+              "type": "expression",
+              "text": "x terms: 4x, 2x",
+              "id": null
+            },
+            {
+              "type": "expression",
+              "text": "constants: 5, -1",
+              "id": null
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-2",
+        "BoxCreation": true,
+        "text": [
+          "Combine x terms",
+          "4x + 2x = 6x"
+        ],
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": "step-1",
+          "beats": [
+            {
+              "type": "note",
+              "text": "We start from the previous step."
+            },
+            {
+              "type": "expression",
+              "text": "4x + 2x",
+              "id": null
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "Combine the x terms."
+            },
+            {
+              "type": "explain",
+              "text": "4x and 2x are like terms — they share the variable x. We add the coefficients 4 and 2."
+            },
+            {
+              "type": "explain",
+              "text": "4 + 2 = 6, so the combined term is 6x."
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "After combining:"
+            },
+            {
+              "type": "expression",
+              "text": "6x",
+              "id": null
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-3",
+        "BoxCreation": true,
+        "text": [
+          "Combine constants",
+          "5 - 1 = 4"
+        ],
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": "step-2",
+          "beats": [
+            {
+              "type": "note",
+              "text": "We start from the previous step."
+            },
+            {
+              "type": "expression",
+              "text": "5 - 1",
+              "id": null
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "Combine the constants."
+            },
+            {
+              "type": "explain",
+              "text": "5 and -1 are constants. We subtract 1 from 5."
+            },
+            {
+              "type": "explain",
+              "text": "5 - 1 = 4."
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "After combining:"
+            },
+            {
+              "type": "expression",
+              "text": "4",
+              "id": null
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "step-4",
+        "BoxCreation": true,
+        "text": [
+          "Put groups together",
+          "6x + 4"
+        ],
+        "linkedPortion": null,
+        "derivation": {
+          "fromStepId": "step-3",
+          "beats": [
+            {
+              "type": "note",
+              "text": "We start from the previous step."
+            },
+            {
+              "type": "expression",
+              "text": "6x + 4",
+              "id": null
+            },
+            {
+              "type": "arrow",
+              "direction": "down"
+            },
+            {
+              "type": "note",
+              "text": "Combine the results of previous steps."
+            },
+            {
+              "type": "explain",
+              "text": "We combine the simplified x term and the constant term."
+            },
+            {
+              "type": "expression",
+              "text": "6x + 4",
+              "id": null
+            }
+          ],
+          "frames": []
+        }
+      },
+      {
+        "id": "result",
+        "BoxCreation": true,
+        "text": [
+          "Simplified Expression",
+          "6x + 4"
+        ],
+        "linkedPortion": null,
+        "derivation": null
+      }
+    ],
+    "connections": [
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-1",
+        "to": "step-2"
+      },
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-2",
+        "to": "step-3"
+      },
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-3",
+        "to": "step-4"
+      },
+      {
+        "id": null,
+        "LineCreation": true,
+        "from_": "step-4",
+        "to": "result"
+      }
+    ]
+  },
+  "created_at": "2026-06-30T05:56:21.984341Z"
+}

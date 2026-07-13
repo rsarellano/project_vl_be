@@ -7,12 +7,14 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.helpers.hash import hash_pass, verify_pass
 from app.helpers.security import create_access_token, verify_access_token
 from app.models.user_models.Token import Token
 from app.models.user_models.User import User
-from app.schemas.user_schemas.user_schemas import UserCreate, UserLogin
+from app.models.subscription_models.Subscription import Subscription
+from app.schemas.user_schemas.user_schemas import UserCreate, UserLogin, UserResetPassword
 
 load_dotenv()
 
@@ -33,9 +35,27 @@ async def create_user(user: UserCreate, db: AsyncSession):
         )
 
     hashed_pass = hash_pass(user.password)
-    new_user = User(email=user.email, password=hashed_pass)
+    new_user = User(email=user.email, password=hashed_pass, role=user.role)
     db.add(new_user)
+    await db.flush()
+
+    # Auto-create free subscription for every new user
+    free_sub = Subscription(user_id=new_user.id, tier="free")
+    db.add(free_sub)
     await db.commit()
+
+async def reset_password(data: UserResetPassword, db: AsyncSession):
+    existing_user = await get_user_by_email(data.email, db)
+    if not existing_user:
+        raise HTTPException(
+            status_code=404,
+            detail="Email does not exist!"
+        )
+    
+    hashed_pass = hash_pass(data.new_password)
+    existing_user.password = hashed_pass
+    await db.commit()
+    return {"success": True, "message": "Password reset successfully!"}
 
 async def login_user(user: UserLogin, db:AsyncSession, response: Response):
     existing_user = await get_user_by_email(user.email, db)
@@ -90,11 +110,19 @@ async def get_current_user(request: Request, db: AsyncSession) -> dict[str, str]
     if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    user = await get_user_by_email(email, db)
+    # Eagerly load subscription so we can return the tier
+    result = await db.execute(
+        select(User).where(User.email == email).options(selectinload(User.subscription))
+    )
+    user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    return {"email": email}
+    subscription_tier = "free"
+    if user.subscription:
+        subscription_tier = user.subscription.tier
+
+    return {"email": email, "role": user.role, "id": str(user.id), "subscription_tier": subscription_tier}
 
 
 async def logout_user(request: Request, response: Response, db: AsyncSession) -> dict[str, bool]:

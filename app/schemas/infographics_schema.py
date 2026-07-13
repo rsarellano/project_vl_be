@@ -162,6 +162,20 @@ class MathDerivationBeatMotionStage(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class MathDerivationBeatTrigScene(BaseModel):
+    type: Literal["trig_scene"] = "trig_scene"
+    id: Optional[str] = None
+    angle: Optional[float] = None
+    angleLabel: Optional[str] = None
+    hypotenuseLabel: Optional[str] = None
+    oppositeLabel: Optional[str] = None
+    adjacentLabel: Optional[str] = None
+    formula: Optional[str] = None
+    solution: Optional[str] = None
+    unknownSide: Optional[Literal["hypotenuse", "opposite", "adjacent"]] = None
+    ratio: Optional[Literal["sin", "cos", "tan"]] = None
+
+
 MathDerivationBeat = Union[
     MathDerivationBeatNote,
     MathDerivationBeatExpression,
@@ -169,6 +183,7 @@ MathDerivationBeat = Union[
     MathDerivationBeatExplain,
     MathDerivationBeatMotion,
     MathDerivationBeatMotionStage,
+    MathDerivationBeatTrigScene,
 ]
 
 
@@ -316,11 +331,15 @@ class DrawingStage(BaseModel):
             return out
         sanitized = patch_llm_objects_before_validation(raw_objects)
         patched: list[Any] = []
+        extracted_connections: list[Any] = []
         for idx, item in enumerate(sanitized):
             if not isinstance(item, dict):
                 patched.append(item)
                 continue
             o = dict(item)
+            if o.get("LineCreation") is True:
+                extracted_connections.append(o)
+                continue
             if o.get("BoxCreation") is True and _id_missing(o.get("id")):
                 o["id"] = f"box-{idx}"
             elif o.get("TextCreation") is True and _id_missing(o.get("id")):
@@ -328,7 +347,13 @@ class DrawingStage(BaseModel):
             elif o.get("CodeDisplay") is True and _id_missing(o.get("id")):
                 o["id"] = "source"
             patched.append(o)
+        
         out["objects"] = patched
+        if extracted_connections:
+            if not isinstance(out.get("connections"), list):
+                out["connections"] = []
+            out["connections"].extend(extracted_connections)
+            
         return out
 
     @model_validator(mode="after")

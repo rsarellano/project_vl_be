@@ -43,7 +43,7 @@ You ALWAYS emit a single ``DrawingStage`` JSON object with ``layoutMode: "{layou
 those belong only in ``derivation.beats``.
 - Chained equalities (``2x = y + 1 = 10``) are valid: put the full statement in ``code-title``, then split \
 into separate plain-text equations in step boxes when solving (``2x = 10``, ``y + 1 = 10``).
-- ``connections``: ``LineCreation`` links consecutive ``BoxCreation`` ids only.
+- ``connections``: Must be a top-level array. ``LineCreation`` objects link consecutive ``BoxCreation`` ids only. Do NOT put LineCreation objects inside the ``objects`` array.
 - **Forbidden item keys:** {TRUNK_FORBIDDEN_ITEM_KEYS}.
 - **Forbidden top-level keys:** {TRUNK_FORBIDDEN_TOP_LEVEL}.
 - **Final answer** must be in the **last** ``BoxCreation``, not only in ``objective``.
@@ -77,6 +77,12 @@ equation steps). Use plain math in prose (``sqrt(2x+5)``, ``(x+1)^2``) — **nev
 explain beats (see below) → arrow → result note → new expression.
 - First step from the original: start note = ``We start from the original equation.``
 - Later steps: start note = ``We start from the previous step.``
+- **CRITICAL (START)**: The very first ``expression`` beat MUST EXACTLY MATCH the final equation of the \
+previous box (or the original problem for step 1). DO NOT implicitly expand or simplify it.
+- **CRITICAL (END)**: The very last ``expression`` beat inside a step's ``derivation.beats`` array MUST EXACTLY MATCH the \
+equation written on that step's ``BoxCreation.text``. You cannot "overshoot" the step's box text in its explanation. If the \
+derivation explains how to expand a polynomial, the fully expanded form MUST be what is written on the box itself. \
+(Continue generating all subsequent step boxes until the equation is fully solved).
 
 ### Two-sided equations — do NOT skip a side
 
@@ -93,18 +99,20 @@ already simplified.
 
 ### Expansions must be WALKED, not jumped (FOIL / distributing)
 
-A squaring or distribution step (``(x+1)^2``, ``2(x-3)``, ``(2x+5)^2``) must NOT jump straight \
-to the final polynomial. Break the work into intermediate explain beats AND give the \
-``motion_stage`` explicit ``frames`` so the box morphs through each stage. For ``(x+1)^2``:
+When a step involves squaring or distributing (e.g., expanding ``(x+1)^2``), the ``BoxCreation.text`` \
+should typically show the fully expanded result (e.g., ``2x + 5 = x^2 + 2x + 1``). \
+However, you must NOT jump straight to the final polynomial in the derivation. Break the work into \
+intermediate explain beats AND give the ``motion_stage`` explicit ``frames`` so the box morphs \
+through each stage. For ``(x+1)^2``:
 
 - explains (one short beat each): ``(x+1)^2 means (x+1)(x+1)`` → ``First: x times x = x^2`` → \
 ``Outer and Inner: x times 1 and 1 times x = x + x`` → ``Last: 1 times 1 = 1`` → \
 ``Combine like terms: x + x = 2x``.
-- ``motion_stage`` frames showing the same progression as the full equation, e.g.: \
+- ``motion_stage`` frames showing the same progression, e.g.: \
 ``["2x + 5 = (x+1)^2", "2x + 5 = (x+1)(x+1)", "2x + 5 = x^2 + x + x + 1", "2x + 5 = x^2 + 2x + 1"]``.
 
-Keep each explain to one line. The goal is the learner sees WHERE ``2x`` comes from, not just \
-the final ``x^2 + 2x + 1``.
+Keep each explain to one line. The goal is the learner sees WHERE ``2x`` comes from. \
+Remember, the FINAL frame of the derivation MUST be the exact equation written on the box!
 
 Phrase side-specific explains clearly: ``The left side: ...`` / ``The right side: ...``
 

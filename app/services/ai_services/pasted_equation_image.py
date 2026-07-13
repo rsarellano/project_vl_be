@@ -34,7 +34,7 @@ class EquationOcrResult(BaseModel):
 
 
 def _vision_model() -> str:
-    return os.getenv("OPENAI_VISION_MODEL", os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o"))
+    return os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini")
 
 
 def normalize_image_data_url(value: str) -> str:

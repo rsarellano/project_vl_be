@@ -1,11 +1,12 @@
-"""Math subtypes — edit one file per topic (algebra, geometry, arithmetic, general)."""
+"""Math subtypes — edit one file per topic (algebra, geometry, arithmetic, trigonometry, general)."""
 
-from . import algebra, arithmetic, general, geometry
+from . import algebra, arithmetic, general, geometry, trigonometry
 
 SUBTYPES = {
     "algebra": algebra,
     "geometry": geometry,
     "arithmetic": arithmetic,
+    "trigonometry": trigonometry,
     "general": general,
 }
 

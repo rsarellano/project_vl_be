@@ -11,25 +11,17 @@ EXAMPLE = """{
   "objects": [
     { "id": "problem", "TextCreation": true, "role": "code-title", "text": ["5 + 3 = ?"] },
     { "id": "objective", "TextCreation": true, "role": "objective", "text": ["Objective:", "Add whole numbers"] },
-    { "id": "step-1", "BoxCreation": true, "text": ["Operands", "", "5 and 3"] },
-    { "id": "step-2", "BoxCreation": true, "text": ["Operation", "", "Addition", "Combine amounts"] },
+    { "id": "step-1", "BoxCreation": true, "text": ["Given Values", "", "5 and 3"] },
+    { "id": "step-2", "BoxCreation": true, "text": ["Applied Operation", "", "Addition", "Combine the values"] },
     {
       "id": "step-3",
       "BoxCreation": true,
-      "text": ["Work", "", "5 + 3", "= 8"],
+      "text": ["Calculation", "", "5 + 3", "= 8"],
       "derivation": {
         "fromStepId": "step-2",
         "beats": [
-          { "type": "note", "text": "We start from the previous step." },
           { "type": "expression", "text": "5 + 3" },
-          { "type": "arrow", "direction": "down" },
-          { "type": "note", "text": "Add the operands." },
-          {
-            "type": "explain",
-            "text": "Addition combines the two amounts: start at 5 and count up 3 more to reach 8."
-          },
-          { "type": "arrow", "direction": "down" },
-          { "type": "note", "text": "After adding:" },
+          { "type": "motion_stage", "from": "5 + 3", "to": "8" },
           { "type": "expression", "text": "8" }
         ]
       }
@@ -45,11 +37,19 @@ EXAMPLE = """{
 
 PEDAGOGY = """\
 - ``code-title`` = the numeric question (expression or word problem summary).
-- Boxes: identify operands → name operation → show calculation → **last box = final value**.
+- Boxes: identify given values → name applied operation → show calculation → **last box = final value**.
 - For word problems, first box may restate what is known before computing.
 - For fractions/decimals/percents, one box per conversion or common-denominator step.
 - Keep numbers explicit in every step; do not jump from question to answer in one box.
-- Include ``derivation.beats`` on calculation steps — explain WHY that operation applies (e.g. common denominator, place value)."""
+
+### Derivation rules for arithmetic
+- **Only the Calculation step** gets a ``derivation``. The Given Values and Applied Operation \
+steps do NOT get derivation — they are self-explanatory.
+- The Calculation derivation has exactly 3 beats: \
+``expression`` (the arithmetic expression), ``motion_stage`` with ``from``/``to``, \
+and ``expression`` (the result). All pure math, zero prose.
+- The ``motion_stage.from`` MUST be a pure arithmetic expression like ``5 + 3``, NOT prose. \
+The ``motion_stage.to`` MUST be the numeric answer only. No ``operation`` key needed."""
 
 SYSTEM = math_trunk_system_prompt(
     title="You design **arithmetic** diagrams (operations and numeric reasoning).",
@@ -64,7 +64,8 @@ PROMPT = SubtypePrompt(
     system=SYSTEM,
     human_hint=(
         "Show both operands before the operation. Last box = final numeric answer. "
-        "Include derivation.beats on work steps."
+        "Only the Calculation step gets derivation — 3 beats: expression, motion_stage, expression. "
+        "No derivation on Given Values or Applied Operation boxes."
     ),
     produce_line=f"Produce one arithmetic DrawingStage. {math_produce_line()}",
 )

@@ -58,3 +58,16 @@ class AnswerRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class StepFollowUpRequest(BaseModel):
+    answer_id: UUID
+    step_id: str
+    question: str
+    step_index: int
+    stage: DrawingStage
+    original_prompt: str | None = None
+
+
+class StepFollowUpResponse(BaseModel):
+    answer: str
