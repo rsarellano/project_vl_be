@@ -19,6 +19,7 @@ from app.schemas.user_schemas.user_schemas import UserCreate, UserLogin, UserRes
 load_dotenv()
 
 TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE", 60))
+ALLOWED_SIGNUP_ROLES = frozenset({"student", "educator"})
 
 async def get_user_by_email(email: str, db:AsyncSession):
     result = await db.execute(select(User).where(User.email == email))
@@ -34,8 +35,15 @@ async def create_user(user: UserCreate, db: AsyncSession):
             detail="Email already exist!"
         )
 
+    role = (user.role or "student").strip().lower()
+    if role not in ALLOWED_SIGNUP_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid role. Use student or educator.",
+        )
+
     hashed_pass = hash_pass(user.password)
-    new_user = User(email=user.email, password=hashed_pass, role=user.role)
+    new_user = User(email=user.email, password=hashed_pass, role=role, sa_access=False)
     db.add(new_user)
     await db.flush()
 
@@ -43,6 +51,11 @@ async def create_user(user: UserCreate, db: AsyncSession):
     free_sub = Subscription(user_id=new_user.id, tier="free")
     db.add(free_sub)
     await db.commit()
+    try:
+        from app.services.admin_realtime import broadcast_admin_dashboard
+        await broadcast_admin_dashboard()
+    except Exception:
+        pass
 
 async def reset_password(data: UserResetPassword, db: AsyncSession):
     existing_user = await get_user_by_email(data.email, db)
@@ -122,7 +135,13 @@ async def get_current_user(request: Request, db: AsyncSession) -> dict[str, str]
     if user.subscription:
         subscription_tier = user.subscription.tier
 
-    return {"email": email, "role": user.role, "id": str(user.id), "subscription_tier": subscription_tier}
+    return {
+        "email": email,
+        "role": user.role,
+        "id": str(user.id),
+        "subscription_tier": subscription_tier,
+        "sa_access": bool(user.sa_access),
+    }
 
 
 async def logout_user(request: Request, response: Response, db: AsyncSession) -> dict[str, bool]:

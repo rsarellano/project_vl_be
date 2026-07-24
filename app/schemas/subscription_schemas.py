@@ -13,6 +13,8 @@ class TierDisplayResponse(BaseModel):
     price: float
     price_label: str
     billing_period: str | None
+    yearly_price: float | None = None
+    yearly_price_label: str | None = None
     description: str
     badge: str | None
     features: list[str]
@@ -28,6 +30,7 @@ class UsageResponse(BaseModel):
 
 class UpgradeRequest(BaseModel):
     tier: str = "pro"
+    billing_period: str = "month"  # "month" | "year"
 
 
 class SubscriptionResponse(BaseModel):

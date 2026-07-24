@@ -66,3 +66,22 @@ class AssignmentDetailResponse(BaseModel):
     submission: SubmissionResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ClassroomStudentResponse(BaseModel):
+    id: UUID
+    email: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EducatorSubmissionResponse(BaseModel):
+    id: UUID
+    student_id: UUID
+    student_email: str
+    answers: dict[str, str]
+    submitted_at: datetime
+    score: float | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+

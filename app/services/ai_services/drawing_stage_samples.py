@@ -109,6 +109,3 @@ def get_while_loop_stage() -> DrawingStage:
     }
 
     return DrawingStage.model_validate(payload)
-
-
-

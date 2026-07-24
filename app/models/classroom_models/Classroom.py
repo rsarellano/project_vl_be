@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 from app.connection.database import Base
@@ -11,6 +11,7 @@ class Classroom(Base):
     name = Column(String(200), nullable=False)
     code = Column(String(10), nullable=False, unique=True)
     educator_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
+    settings = Column(JSONB, nullable=False, default=dict)
 
     educator = relationship("User")
     memberships = relationship("ClassroomMembership", back_populates="classroom", cascade="all, delete-orphan")

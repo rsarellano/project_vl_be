@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.services.ai_services.drawing_stage.math.algebra_simplify import looks_like_simplify_expression
+from app.services.ai_services.drawing_stage.math.arithmetic import looks_like_order_of_operations
 from app.services.ai_services.pasted_code import extract_pasted_code
 from app.services.ai_services.question_type_identifier import QuestionTypeInfo
 
@@ -53,6 +54,21 @@ def build_drawing_stage_human_message(
             "This is a simplify-expression task. Box 1 lists all groups. Then separate boxes: "
             "combine variable terms (show arithmetic, e.g. 4x + 2x = 6x), combine constants "
             "(show arithmetic, e.g. 5 - 1 = 4), put groups together, then simplified form.\n\n"
+            f"{hint}"
+        )
+    elif (
+        spec.domain == "math"
+        and spec.subtype == "arithmetic"
+        and looks_like_order_of_operations(p)
+    ):
+        hint = (
+            "This is an order-of-operations (MDAS/PEMDAS) problem. "
+            "Do NOT use Given Values / Applied Operation / single Calculation. "
+            "Never put a comma-separated list of all operations in one box. "
+            "Use one box per move: parentheses → multiply/divide left-to-right → "
+            "add/subtract left-to-right → Answer. "
+            "Each transform box needs derivation.beats with Why + motion_stage + the full "
+            "rewritten expression after that move.\n\n"
             f"{hint}"
         )
     hint_block = f"{hint}\n\n" if hint else ""

@@ -127,17 +127,23 @@ async def upgrade(
     if target_tier == "free":
         raise HTTPException(status_code=400, detail="Use the downgrade endpoint to revert to free.")
 
+    billing = (body.billing_period or "month").lower()
+    if billing not in ("month", "year"):
+        raise HTTPException(status_code=400, detail="billing_period must be 'month' or 'year'")
+
     user = await _get_user_obj(request, db)
     sub = await _ensure_subscription(user, db)
     sub.tier = target_tier
     sub.started_at = datetime.now(timezone.utc)
-    sub.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    days = 365 if billing == "year" else 30
+    sub.expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     await db.commit()
 
+    period_label = "yearly" if billing == "year" else "monthly"
     return SubscriptionResponse(
         success=True,
         tier=sub.tier,
-        message=f"Upgraded to {target_tier}!",
+        message=f"Upgraded to {target_tier} ({period_label})!",
     )
 
 

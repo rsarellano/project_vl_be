@@ -7,6 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import socketio
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ load_dotenv(_env_path, override=True)
 
 from app.connection.database import init_models
 from app.controllers.main_router import router
-from app.socket_app import socket_app
+from app.socket_app import sio
 
 _api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
 if not _api_key:
@@ -44,9 +45,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Project VL API", version="0.1.0", lifespan=lifespan)
+fastapi_app = FastAPI(title="Project VL API", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
@@ -57,12 +58,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
-
-# Mount Socket.IO application
-app.mount("/", socket_app)
+fastapi_app.include_router(router)
 
 
-@app.get("/health")
+@fastapi_app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Proper Socket.IO + FastAPI composition (do NOT mount ASGIApp at "/")
+app = socketio.ASGIApp(
+    sio,
+    other_asgi_app=fastapi_app,
+    socketio_path="socket.io",
+)

@@ -16,8 +16,8 @@ from typing import Any
 
 TIER_LIMITS: dict[str, dict[str, int | None]] = {
     "free": {
-        "max_classrooms": 2,
-        "max_students_per_classroom": 10,
+        "max_classrooms": 5,
+        "max_students_per_classroom": 20,
         "max_assignments_per_classroom": 5,
         "max_diagrams_per_day": 10,
     },
@@ -37,11 +37,13 @@ TIER_DISPLAY: dict[str, dict[str, Any]] = {
         "price": 0,
         "price_label": "$0",
         "billing_period": None,
+        "yearly_price": None,
+        "yearly_price_label": None,
         "description": "Get started with the essentials",
         "badge": None,
         "features": [
-            "Up to 2 classrooms",
-            "Up to 10 students per classroom",
+            "Up to 5 classrooms",
+            "Up to 20 students per classroom",
             "Up to 5 assignments per classroom",
             "Up to 10 diagram generations per day",
             "Join classrooms via code",
@@ -51,9 +53,11 @@ TIER_DISPLAY: dict[str, dict[str, Any]] = {
     "pro": {
         "slug": "pro",
         "name": "Pro",
-        "price": 9.99,
-        "price_label": "$9.99",
+        "price": 14.99,
+        "price_label": "$14.99",
         "billing_period": "month",
+        "yearly_price": 149,
+        "yearly_price_label": "$149",
         "description": "Unlimited everything for serious educators",
         "badge": "Most Popular",
         "features": [

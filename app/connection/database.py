@@ -44,8 +44,24 @@ def import_models() -> None:
     from app.models.classroom_models.Assignment import Assignment
     from app.models.classroom_models.AssignmentSubmission import AssignmentSubmission
     from app.models.subscription_models.Subscription import Subscription
+    from app.models.analytics_models.UsageTimeSlice import UsageTimeSlice
+    from app.models.lecture_models.Lecture import Lecture
+    from app.models.asset_models.UserAsset import UserAsset
 
-    _ = (User, Token, Answer, StepFollowUp, Classroom, ClassroomMembership, Assignment, AssignmentSubmission, Subscription)
+    _ = (
+        User,
+        Token,
+        Answer,
+        StepFollowUp,
+        Classroom,
+        ClassroomMembership,
+        Assignment,
+        AssignmentSubmission,
+        Subscription,
+        UsageTimeSlice,
+        Lecture,
+        UserAsset,
+    )
 
 
 async def get_db():
@@ -71,9 +87,52 @@ async def _patch_legacy_users_role_column() -> None:
         )
 
 
+async def _patch_legacy_users_sa_access_column() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS sa_access BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+
+
+async def _patch_legacy_classrooms_settings_column() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "ALTER TABLE classrooms ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb"
+            )
+        )
+
+
+async def _patch_legacy_lectures_publish_columns() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS is_published "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS published_at "
+                "TIMESTAMPTZ NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS subject "
+                "VARCHAR(50) NOT NULL DEFAULT 'general'"
+            )
+        )
+
+
 async def init_models():
     import_models()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _patch_legacy_answers_blueprint_column()
     await _patch_legacy_users_role_column()
+    await _patch_legacy_users_sa_access_column()
+    await _patch_legacy_classrooms_settings_column()
+    await _patch_legacy_lectures_publish_columns()
