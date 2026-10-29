@@ -24,7 +24,12 @@ from app.services.lecture_scene import materialize_slides
 from app.services.lecture_subjects import normalize_subject
 
 
-def _slides_as_dicts(slides: list[Any], *, with_scenes: bool = True) -> list[dict[str, Any]]:
+def _slides_as_dicts(
+    slides: list[Any],
+    *,
+    with_scenes: bool = True,
+    subject: str = "general",
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for i, slide in enumerate(slides, start=1):
         if hasattr(slide, "model_dump"):
@@ -36,7 +41,7 @@ def _slides_as_dicts(slides: list[Any], *, with_scenes: bool = True) -> list[dic
         data.setdefault("number", i)
         out.append(data)
     if with_scenes:
-        return materialize_slides(out)
+        return materialize_slides(out, subject=subject)
     return out
 
 
@@ -57,7 +62,17 @@ def to_response(lecture: Lecture, *, viewer: User | None = None) -> LectureRespo
     )
 
 
-def to_summary(lecture: Lecture) -> LectureSummary:
+def author_label(user: User | None) -> str | None:
+    if not user or not getattr(user, "email", None):
+        return None
+    email = str(user.email).strip()
+    if not email:
+        return None
+    local = email.split("@", 1)[0].strip()
+    return local or email
+
+
+def to_summary(lecture: Lecture, *, author: str | None = None) -> LectureSummary:
     slides = lecture.slides if isinstance(lecture.slides, list) else []
     return LectureSummary(
         id=lecture.id,
@@ -68,6 +83,7 @@ def to_summary(lecture: Lecture) -> LectureSummary:
         published_at=lecture.published_at,
         created_at=lecture.created_at,
         updated_at=lecture.updated_at,
+        author=author,
     )
 
 
@@ -81,7 +97,7 @@ async def create_lecture(
         title=body.title.strip() or "Untitled Lecture",
         subject=normalize_subject(body.subject),
         prompt=body.prompt,
-        slides=_slides_as_dicts(body.slides),
+        slides=_slides_as_dicts(body.slides, subject=normalize_subject(body.subject)),
         is_published=False,
         published_at=None,
     )
@@ -98,6 +114,7 @@ async def generate_and_save_lecture(
     *,
     subject: str | None = None,
     topic: str | None = None,
+    clarifications: list[dict] | None = None,
 ) -> Lecture:
     text = (prompt or "").strip()
     if not text:
@@ -105,19 +122,35 @@ async def generate_and_save_lecture(
 
     subject_key = normalize_subject(subject)
     draft = await generate_lecture_from_prompt(
-        text, subject=subject_key, topic=topic
+        text,
+        subject=subject_key,
+        topic=topic,
+        clarifications=clarifications,
     )
     title = str(draft.get("title") or "Untitled Lecture").strip() or "Untitled Lecture"
     slides = draft.get("slides") or []
     if not isinstance(slides, list):
         slides = []
 
+    stored_prompt = text
+    if clarifications:
+        extras = []
+        for item in clarifications:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("question") or "").strip()
+            a = str(item.get("answer") or "").strip()
+            if a:
+                extras.append(f"Q: {q}\nA: {a}" if q else f"A: {a}")
+        if extras:
+            stored_prompt = f"{text}\n\n--- Interview ---\n" + "\n\n".join(extras)
+
     lecture = Lecture(
         owner_id=user.id,
         title=title,
         subject=subject_key,
-        prompt=text,
-        slides=_slides_as_dicts(slides),
+        prompt=stored_prompt[:8000],
+        slides=_slides_as_dicts(slides, subject=subject_key),
         is_published=False,
         published_at=None,
     )
@@ -125,6 +158,26 @@ async def generate_and_save_lecture(
     await db.commit()
     await db.refresh(lecture)
     return lecture
+
+
+async def clarify_lecture_topic(
+    prompt: str,
+    *,
+    subject: str | None = None,
+) -> dict:
+    from app.services.ai_services.classroom_assistant_service import (
+        propose_lecture_clarifications,
+    )
+
+    text = (prompt or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+    try:
+        return await propose_lecture_clarifications(
+            text, subject=normalize_subject(subject)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def list_lectures_for_user(user: User, db: AsyncSession) -> list[Lecture]:
@@ -135,6 +188,37 @@ async def list_lectures_for_user(user: User, db: AsyncSession) -> list[Lecture]:
         .order_by(Lecture.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def list_published_community_lectures(
+    viewer: User,
+    db: AsyncSession,
+    *,
+    subject: str | None = None,
+    limit: int = 48,
+) -> list[tuple[Lecture, User]]:
+    """Published lectures from other users, newest publish first.
+
+    Optional ``subject`` filters to one allowlisted subject (math / science / coding / general).
+    """
+    stmt = (
+        select(Lecture, User)
+        .join(User, User.id == Lecture.owner_id)
+        .where(
+            Lecture.is_published.is_(True),
+            Lecture.owner_id != viewer.id,
+        )
+        .order_by(
+            Lecture.published_at.desc().nullslast(),
+            Lecture.created_at.desc(),
+        )
+        .limit(max(1, min(limit, 100)))
+    )
+    if subject:
+        stmt = stmt.where(Lecture.subject == normalize_subject(subject))
+
+    result = await db.execute(stmt)
+    return list(result.all())
 
 
 async def get_lecture_for_user(
@@ -201,7 +285,8 @@ async def update_lecture_for_user(
         lecture.title = title
     if body.slides is not None:
         lecture.slides = materialize_slides(
-            _slides_as_dicts(body.slides, with_scenes=False)
+            _slides_as_dicts(body.slides, with_scenes=False),
+            subject=lecture.subject,
         )
         flag_modified(lecture, "slides")
     if body.subject is not None:

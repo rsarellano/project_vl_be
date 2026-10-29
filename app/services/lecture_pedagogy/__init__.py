@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.lecture_pedagogy.coding import CODING_LECTURE_PEDAGOGY
 from app.services.lecture_pedagogy.math_topics import (
     MATH_TOPIC_KEYWORDS,
     MATH_TOPIC_LABELS,
@@ -10,6 +11,7 @@ from app.services.lecture_pedagogy.math_topics import (
 from app.services.lecture_pedagogy.shared import LECTURE_PEDAGOGY
 
 __all__ = [
+    "CODING_LECTURE_PEDAGOGY",
     "LECTURE_PEDAGOGY",
     "MATH_TOPIC_LABELS",
     "MATH_TOPIC_PEDAGOGY",
@@ -24,6 +26,10 @@ def infer_math_topic(prompt: str, topic: str | None = None) -> str:
         key = topic.strip().lower().replace(" ", "_")
         aliases = {
             "trig": "trigonometry",
+            "calc": "calculus",
+            "calc_1": "calculus",
+            "calculus_1": "calculus",
+            "calculus1": "calculus",
             "afm": "functions",
             "advanced_functions": "functions",
             "function": "functions",
@@ -41,9 +47,12 @@ def infer_math_topic(prompt: str, topic: str | None = None) -> str:
             if word in blob:
                 scores[slug] += 1
     best = max(scores, key=scores.get)
-    if scores[best] > 0:
-        return best
-    return "general"
+    if scores[best] <= 0:
+        return "general"
+    # A limit that also says "simplify" or "polynomial" is still calculus.
+    if scores.get("calculus", 0) > 0 and scores["calculus"] >= scores[best]:
+        return "calculus"
+    return best
 
 
 def resolve_lecture_pedagogy(
@@ -67,5 +76,7 @@ def resolve_lecture_pedagogy(
             topic_slug, MATH_TOPIC_PEDAGOGY["general"]
         )
         parts.append(topic_block.strip())
+    elif subject == "coding":
+        parts.append(CODING_LECTURE_PEDAGOGY.strip())
 
     return "\n\n".join(parts), topic_slug

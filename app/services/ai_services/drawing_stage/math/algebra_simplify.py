@@ -33,6 +33,12 @@ class ParsedSimplifyExpression:
 
 def looks_like_simplify_expression(prompt: str) -> bool:
     text = (prompt or "").strip().lower()
+    # Limits and derivatives contain x, but they are not like-term simplifications.
+    if re.search(
+        r"\b(?:lim(?:it)?|derivative|differentiate|d/dx|dy/dx)\b|x\s*(?:->|→)",
+        text,
+    ):
+        return False
     return "simplify" in text and bool(_VARIABLE_TERM.search(text))
 
 

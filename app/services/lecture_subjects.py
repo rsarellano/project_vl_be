@@ -33,9 +33,9 @@ Subject focus: SCIENCE (physics, chemistry, biology, earth science).
 """,
     "coding": """
 Subject focus: CODING / COMPUTER SCIENCE.
-- Teach with a short mental model + traced example.
-- Put short code/pseudocode in equation as plain text (no markdown fences).
-- visual_type: usually "equation". Do NOT invent train scenes unless the topic is literally motion/simulation.
+- Teach with a real runnable sample in equation + short stage steps (boxes/arrows).
+- scene_hint.archetype: code_walkthrough (or code_flow for I/O demos only).
+- visual_type: "equation". Never invent train scenes. Never use abstract-only box stages.
 """,
     "general": """
 Subject focus: GENERAL EDUCATION.

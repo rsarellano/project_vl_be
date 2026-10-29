@@ -3,6 +3,7 @@ uvicorn
 python-dotenv
 python-multipart
 sqlalchemy
+greenlet
 pydantic
 pydantic-core
 json5

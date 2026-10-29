@@ -7,19 +7,39 @@ import re
 from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+
+from app.services.ai_services.llm_client import build_chat_model
 
 from app.schemas.ai_schemas.question_type_schema import QuestionTypeClassification
 from app.services.ai_services.pasted_code import (
     looks_like_coding_request,
     looks_like_pasted_code,
+    looks_like_problem_statement,
+    subtype_for_pasted_prompt,
     user_asked_to_implement,
 )
 
 _VARIABLE_TERM = re.compile(r"\d+\s*[a-zA-Z]|[a-zA-Z]\s*[\+\-\*\/]|\b[a-zA-Z]\s*\d")
 
+# Limits and derivatives must win over the algebra bonus that a lone "x" receives.
+_CALCULUS_HINT = re.compile(
+    r"("
+    r"\b(?:calculus|derivative|derivatives|differentiate|differentiation|"
+    r"d/dx|dy/dx|continuity|power rule|product rule|quotient rule|chain rule|"
+    r"tangent line|instantaneous rate)\b"
+    r"|\blim(?:it)?\b"
+    r"|f\s*'\s*\("
+    r"|x\s*(?:->|→)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def looks_like_calculus(prompt: str) -> bool:
+    return bool(_CALCULUS_HINT.search(prompt or ""))
+
 _VALID_SUBTYPES: dict[str, frozenset[str]] = {
-    "math": frozenset({"algebra", "geometry", "arithmetic", "trigonometry", "general"}),
+    "math": frozenset({"algebra", "geometry", "arithmetic", "trigonometry", "calculus", "general"}),
     "coding": frozenset({"code_solution", "code_explain", "loop_trace", "general"}),
     "science": frozenset({"biology", "chemistry", "physics", "general"}),
 }
@@ -29,23 +49,29 @@ You classify user prompts for a visual learning diagram engine.
 Return exactly one domain and subtype.
 
 Domains and subtypes:
+- math.calculus — Calculus 1: limits, continuity, derivatives, and tangent lines. \
+Example: "lim x->3 of x^2+5x-4" and "derivative of x^3" are calculus, even though they contain x.
 - math.algebra — equations, solving for variables, simplifying expressions with variables \
 (like terms), factoring, symbolic manipulation. Example: "Simplify 4m+5+2m-1" is algebra.
 - math.trigonometry — right-triangle problems using sin/cos/tan (SOH CAH TOA), finding \
 missing sides or angles, inverse trig (arcsin/arccos/arctan). Example: "Find the opposite \
-side of a right triangle with hypotenuse 10 and angle 30°" is trigonometry.
+side of a right triangle with hypotenuse 10 and angle 30°" is trigonometry. \
+Derivative of sin(x) is calculus, not trigonometry.
 - math.geometry — shapes, area, perimeter, volume, angles, coordinates, proofs about figures \
 (NOT trigonometry — use math.trigonometry for sin/cos/tan problems).
 - math.arithmetic — numeric computation only (no variables): fractions, percents, order of \
 operations, word problems with pure numbers.
-- math.general — other math not clearly algebra/geometry/arithmetic/trigonometry.
-- coding.code_explain — user pasted existing code to understand (explain this code).
+- math.general — other math not clearly algebra/geometry/arithmetic/trigonometry/calculus.
+- coding.code_explain — user pasted existing source code to understand (explain this code).
 - coding.loop_trace — trace a loop iteration-by-iteration.
-- coding.code_solution — implement/write/solve a programming problem.
+- coding.code_solution — implement/write/solve a programming problem, including \
+LeetCode-style statements with examples but no source code.
 - coding.general — other programming topics.
 - science.biology | science.chemistry | science.physics | science.general.
 
 Rules:
+- Limits (lim, x->a), derivatives (d/dx, f'), continuity, and tangent lines → math.calculus, \
+NOT algebra, even when the expression contains x or the word simplify.
 - Expressions with variables (x, m, n, etc.) to simplify or rewrite → math.algebra, NOT arithmetic.
 - "Solve for x" or equations → math.algebra.
 - Problems mentioning sin, cos, tan, hypotenuse, opposite, adjacent, SOH CAH TOA → math.trigonometry, NOT geometry.
@@ -77,10 +103,14 @@ def _normalize_subtype(domain: str, subtype: str) -> str:
 
 
 def _coding_paste_override(prompt: str) -> QuestionTypeInfo | None:
-    """High-confidence routing when the user pasted code to explain."""
-    if not looks_like_pasted_code(prompt):
+    """High-confidence routing from the split question, not from words inside the code."""
+    subtype = subtype_for_pasted_prompt(prompt)
+    if subtype is None:
         return None
-    subtype = "code_solution" if user_asked_to_implement(prompt) else "code_explain"
+    if subtype == "code_solution" and not (
+        looks_like_pasted_code(prompt) or looks_like_problem_statement(prompt)
+    ):
+        return None
     return QuestionTypeInfo(
         domain="coding",
         subtype=subtype,
@@ -126,6 +156,20 @@ def identify_question_type_heuristic(
         "sample",
     )
     algebra_markers = ("algebra", "equation", "polynomial", "factor", "quadratic", "solve for")
+    calculus_markers = (
+        "calculus",
+        "derivative",
+        "differentiate",
+        "differentiation",
+        "d/dx",
+        "dy/dx",
+        "continuity",
+        "tangent line",
+        "power rule",
+        "product rule",
+        "quotient rule",
+        "chain rule",
+    )
     trigonometry_markers = (
         "sin", "cos", "tan", "sine", "cosine", "tangent",
         "hypotenuse", "opposite side", "adjacent side",
@@ -161,6 +205,10 @@ def identify_question_type_heuristic(
 
     coding_score = sum(1 for marker in coding_markers if marker in text)
     algebra_score = sum(1 for marker in algebra_markers if marker in text)
+    calculus_score = sum(1 for marker in calculus_markers if marker in text)
+    if looks_like_calculus(text):
+        calculus_score += 4
+        signals.append("calculus_hint")
     if _VARIABLE_TERM.search(text):
         algebra_score += 3
         signals.append("variable_terms")
@@ -168,7 +216,9 @@ def identify_question_type_heuristic(
     geometry_score = sum(1 for marker in geometry_markers if marker in text)
     arithmetic_score = sum(1 for marker in arithmetic_markers if marker in text)
     science_score = sum(1 for marker in science_markers if marker in text)
-    math_score = algebra_score + geometry_score + arithmetic_score + trigonometry_score
+    math_score = (
+        algebra_score + geometry_score + arithmetic_score + trigonometry_score + calculus_score
+    )
 
     if subject_domain == "programming":
         coding_score += 3
@@ -202,8 +252,9 @@ def identify_question_type_heuristic(
             mentions_loop_construct and not pasted_code
         )
 
-        if pasted_code and not user_asked_to_implement(prompt):
-            subtype = "code_explain"
+        pasted_subtype = subtype_for_pasted_prompt(prompt)
+        if pasted_subtype is not None:
+            subtype = pasted_subtype
         elif is_loop_trace:
             subtype = "loop_trace"
         else:
@@ -237,6 +288,16 @@ def identify_question_type_heuristic(
             subtype=subtype,
             confidence=min(0.9, 0.4 + science_score * 0.1),
             signals=signals + [f"science_score={science_score}", f"subtype={subtype}"],
+        )
+
+    # Calculus before algebra: "lim x->3 (x^2+5x-4)" contains x but is not a simplify task.
+    # Also before trigonometry: "derivative of sin(x)" is calculus.
+    if calculus_score >= 1:
+        return QuestionTypeInfo(
+            domain="math",
+            subtype="calculus",
+            confidence=min(0.95, 0.82 + calculus_score * 0.04),
+            signals=signals + [f"calculus_score={calculus_score}"],
         )
 
     # Trigonometry must be checked BEFORE geometry (trig problems mention "triangle" / "angle")
@@ -349,7 +410,7 @@ async def identify_question_type_with_llm(
         user_lines.append(f"Usage context: {usage_context}")
 
     try:
-        llm = ChatOpenAI(
+        llm = build_chat_model(
             temperature=0,
             model=_classifier_model(),
             api_key=api_key,
@@ -369,8 +430,16 @@ async def identify_question_type_with_llm(
 
         domain = result.domain
         subtype = _normalize_subtype(domain, result.subtype)
+        if looks_like_calculus(cleaned):
+            domain = "math"
+            subtype = "calculus"
+            signals_note = "calculus_override"
+        else:
+            signals_note = None
         rationale = (result.rationale or "").strip()
         signals = base_signals + ["classifier=llm", f"subtype={subtype}"]
+        if signals_note:
+            signals.append(signals_note)
         if rationale:
             signals.append(f"rationale={rationale[:120]}")
 

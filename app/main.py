@@ -22,7 +22,14 @@ from app.controllers.main_router import router
 from app.socket_app import sio
 
 _api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-if not _api_key:
+_base_url = (os.getenv("OPENAI_BASE_URL") or "").strip()
+if _base_url:
+    logger.warning(
+        "LLM requests go to %s (model %s), not api.openai.com.",
+        _base_url,
+        os.getenv("OPENAI_ANSWER_MODEL") or "default",
+    )
+elif not _api_key:
     logger.warning("OPENAI_API_KEY is missing. Add it to %s and restart the server.", _env_path)
 elif len(_api_key) < 40 or _api_key == "sk-your-key-here":
     logger.warning(

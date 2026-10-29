@@ -2,6 +2,7 @@
 
 from app.services.ai_services.drawing_stage._prompt_types import SubtypePrompt
 from app.services.ai_services.drawing_stage._trunk_contract import math_produce_line, math_trunk_system_prompt
+from app.services.ai_services.drawing_stage.math.trig_equations import TRIG_EQUATION_PEDAGOGY
 
 EXAMPLE = """{
   "width": 1400,
@@ -45,7 +46,8 @@ PEDAGOGY = """\
 - Pick the clearest step sequence for the user's topic (even if mixed: word problem → equation → solve).
 - Each box shows **one** idea or transformation; include numeric/symbolic state when relevant.
 - Last box = final answer the user asked for.
-- Every step that changes the math must include ``derivation.beats`` with problem-specific WHY text."""
+- Every step that changes the math must include ``derivation.beats`` with problem-specific WHY text.
+""" + TRIG_EQUATION_PEDAGOGY
 
 SYSTEM = math_trunk_system_prompt(
     title="You design **general math** diagrams.",

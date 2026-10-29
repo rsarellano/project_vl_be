@@ -28,6 +28,7 @@ class AssistantResponse(BaseModel):
     message: str
     actions: List[AssistantAction]
     classroom_settings: Dict[str, Any] = Field(default_factory=dict)
+    unsupported_request: bool = False
 
 
 class DashboardAssistantAction(BaseModel):
@@ -40,6 +41,7 @@ class DashboardAssistantIntent(BaseModel):
 
     message: str
     actions: List[DashboardAssistantAction]
+    unsupported_request: bool = False
 
 
 class CreatedClassroomSummary(BaseModel):
@@ -54,3 +56,4 @@ class DashboardAssistantResponse(BaseModel):
     actions: List[DashboardAssistantAction]
     created_classrooms: List[CreatedClassroomSummary] = Field(default_factory=list)
     upgrade_required: bool = False
+    unsupported_request: bool = False

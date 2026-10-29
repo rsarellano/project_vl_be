@@ -7,7 +7,8 @@ import re
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+
+from app.services.ai_services.llm_client import build_chat_model
 from pydantic import BaseModel, Field
 from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -171,7 +172,7 @@ async def _parse_intent(prompt: str) -> ChartIntent:
         return _heuristic_intent(prompt)
 
     try:
-        llm = ChatOpenAI(temperature=0, model=_assistant_model(), api_key=api_key)
+        llm = build_chat_model(temperature=0, model=_assistant_model(), api_key=api_key)
         structured = llm.with_structured_output(ChartIntent, method="function_calling")
         intent: ChartIntent = await structured.ainvoke(
             [

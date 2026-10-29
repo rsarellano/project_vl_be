@@ -17,13 +17,11 @@ import os
 import re
 
 from langchain.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_models.prompt_receiver import PromptReceiver
 from app.schemas.ai_schemas.prompt_receiver_schema import PromptReceiverBase
-
-api_key = os.getenv("OPENAI_API_KEY")
+from app.services.ai_services.llm_client import build_chat_model
 
 
 # =============================================================================
@@ -68,10 +66,9 @@ async def interpret_svg_prompt(prompt: str):
         element_catalog=element_catalog,
     )
 
-    llm = ChatOpenAI(
+    llm = build_chat_model(
         temperature=0.3,
-        model="gpt-4o",
-        api_key=api_key,
+        model=os.getenv("OPENAI_ANSWER_MODEL", "gpt-4o"),
     )
 
     response = llm.invoke(final_prompt)

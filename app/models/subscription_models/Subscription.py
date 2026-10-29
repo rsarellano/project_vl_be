@@ -14,5 +14,6 @@ class Subscription(Base):
     tier = Column(String(50), nullable=False, default="free")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    lemon_subscription_id = Column(String(40), nullable=True)
 
     user = relationship("User", back_populates="subscription")

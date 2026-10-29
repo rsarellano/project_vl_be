@@ -3,28 +3,39 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Literal, Optional
 
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+
+from app.services.ai_services.llm_client import build_chat_model
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.lecture_models.Lecture import Lecture
 from app.models.user_models.User import User
-from app.schemas.lecture_schemas import LectureEditRequest, LectureEditResponse
+from app.schemas.lecture_schemas import (
+    LectureCheckpoint,
+    LectureEditRequest,
+    LectureEditResponse,
+)
 from app.services.lecture_scene import (
     add_arrow_to_scene,
+    add_code_object_to_scene,
     add_text_object_to_scene,
     apply_boxes_slide_direction,
     create_basic_boxes_scene,
     create_trains_scene,
     materialize_slides,
+    remove_object_from_scene,
+    update_object_in_scene,
 )
 from app.services.lecture_subjects import SUBJECT_GUIDANCE, normalize_subject
+
+logger = logging.getLogger(__name__)
 
 
 def _openai_api_key() -> str | None:
@@ -69,15 +80,26 @@ class BoxesMotionPatch(BaseModel):
 class AddStageObject(BaseModel):
     """Add a real graphic onto the stage (visible object), NOT motion direction."""
 
-    kind: Literal["arrow", "text"] = Field(
-        description="arrow = visible arrow shape; text = freeform text box"
+    kind: Literal["arrow", "text", "code"] = Field(
+        description=(
+            "arrow = visible arrow; text = freeform label/prose; "
+            "code = dark IDE-style code sample panel (use for Two Sum, factorial, etc.)"
+        )
     )
     direction: Optional[DirectionWord] = Field(
         default="down",
         description="For kind=arrow only: which way the arrow points (down/up/left/right)",
     )
     body: Optional[str] = Field(
-        default=None, description="For kind=text: the text content"
+        default=None,
+        description=(
+            "For kind=text: short label/prose. "
+            "For kind=code: the FULL source code with newlines (required)."
+        ),
+    )
+    language: Optional[str] = Field(
+        default=None,
+        description="For kind=code: e.g. JavaScript, Python, Java (optional; inferred if omitted)",
     )
     below_object_id: Optional[str] = Field(
         default=None,
@@ -89,6 +111,44 @@ class AddStageObject(BaseModel):
     )
     x: Optional[float] = None
     y: Optional[float] = None
+
+
+class UpdateStageObject(BaseModel):
+    """Change an EXISTING stage object (label, body text, or position/size)."""
+
+    object_id: Optional[str] = Field(
+        default=None,
+        description="Exact object id from stage.objects (preferred when known)",
+    )
+    match: Optional[str] = Field(
+        default=None,
+        description=(
+            "Human name for the object when id is unknown, e.g. 'topic', 'title', "
+            "'equation', 'callout', 'key idea', or the current label text"
+        ),
+    )
+    label: Optional[str] = Field(
+        default=None, description="New badge/label on the box (e.g. change Topic → Lesson)"
+    )
+    body: Optional[str] = Field(
+        default=None, description="New main text inside the object"
+    )
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+
+
+class RemoveStageObject(BaseModel):
+    """Delete an EXISTING stage object."""
+
+    object_id: Optional[str] = Field(
+        default=None, description="Exact object id from stage.objects"
+    )
+    match: Optional[str] = Field(
+        default=None,
+        description="Human name when id unknown: topic, equation, callout, etc.",
+    )
 
 
 class StagePatch(BaseModel):
@@ -110,11 +170,28 @@ class StagePatch(BaseModel):
             "Do NOT use this when the user asks to ADD an arrow/shape on the stage."
         ),
     )
+    update_objects: list[UpdateStageObject] = Field(
+        default_factory=list,
+        description=(
+            "Edit EXISTING stage objects in place. "
+            "Use for 'change the topic label to Lesson', 'rename Topic to …', "
+            "'change the equation text', 'move the callout'."
+        ),
+    )
+    remove_objects: list[RemoveStageObject] = Field(
+        default_factory=list,
+        description=(
+            "Remove EXISTING stage objects. "
+            "Use for 'delete the topic box', 'remove the callout'."
+        ),
+    )
     add_objects: list[AddStageObject] = Field(
         default_factory=list,
         description=(
-            "Add visible graphics onto the stage. "
-            "Use for 'add a downward arrow', 'put an arrow below the topic box', 'add text on stage'."
+            "Add NEW visible graphics onto the stage. "
+            "Use kind=code for programming samples (full source in body). "
+            "Use kind=text only for short labels/prose — NEVER for code. "
+            "Do NOT use this to rename/change an existing box — use update_objects."
         ),
     )
 
@@ -134,6 +211,10 @@ class SlidePatch(BaseModel):
         default=None,
         description="Edit the animated stage on this slide (objects, motion, scene type)",
     )
+    checkpoint: Optional[LectureCheckpoint] = Field(
+        default=None,
+        description="Question students attempt before the next slide",
+    )
 
 
 class SlideDraft(BaseModel):
@@ -143,6 +224,7 @@ class SlideDraft(BaseModel):
     narration: str = ""
     explanation: str = ""
     visual_type: str = "equation"
+    checkpoint: Optional[LectureCheckpoint] = None
 
 
 class LectureEditIntent(BaseModel):
@@ -165,41 +247,61 @@ class LectureEditIntent(BaseModel):
 SYSTEM_PROMPT = """You are a Lecture Edit Assistant for Project VL.
 Educators already have a saved lecture with TEXT (narration/explanation) AND an animated STAGE (scene_spec with objects).
 They will say things like:
+- "change the topic label to Lesson" / "rename Topic to Lesson on all slides"
+- "change the body of the equation box to …"
+- "delete the callout" / "remove the yellow text box"
 - "add a downward arrow on the stage" / "put an arrow below the topic box"
+- "add a Two Sum example in JavaScript" / "put a factorial code sample on this slide"
 - "on page 1, make the boxes slide to the right"
 - "make train A go east and faster"
 - "shorten the narration on slide 1"
 
-CRITICAL distinction:
-- "add an arrow" / "draw an arrow" / "put a downward arrow on the stage" → stage.add_objects with kind="arrow"
-  (this creates a VISIBLE arrow graphic). Do NOT use stage.boxes for that.
-- "make it move down" / "slide downward" / "animate going down" → stage.boxes.direction="down"
-  (this only changes entrance animation of existing boxes).
+CRITICAL distinctions:
+1. CHANGE / RENAME / EDIT an existing stage box → stage.update_objects
+   - "change the topic label to Lesson" →
+     update_objects: [{match:"topic", label:"Lesson"}]
+   - NEVER use add_objects for renames or label changes.
+2. DELETE / REMOVE an existing stage object → stage.remove_objects
+3. ADD a new graphic → stage.add_objects
+4. CODE / programming samples (Two Sum, factorial, recursion, etc.):
+   - MUST use add_objects with kind="code"
+   - body MUST be the FULL working source (multi-line, with newlines)
+   - language e.g. "JavaScript" or "Python"
+   - NEVER use kind="text" for code — that only creates a yellow prose box
+   - NEVER put only a problem title like "Two Sum Problem" — include the actual code
+   Example:
+     add_objects: [{
+       kind: "code",
+       language: "JavaScript",
+       body: "function twoSum(nums, target) {\\n  const map = new Map();\\n  for (let i = 0; i < nums.length; i++) {\\n    const need = target - nums[i];\\n    if (map.has(need)) return [map.get(need), i];\\n    map.set(nums[i], i);\\n  }\\n  return [];\\n}"
+     }]
+5. "make it move down" / animate → stage.boxes.direction (entrance motion only)
 
 You may:
 1. Rename the lecture (title)
 2. Patch slide TEXT: title, equation, narration, explanation, visual_type
+   Optional checkpoint: a subject question students attempt before the next slide.
+   Preserve an existing checkpoint unless the educator asks to change or remove it.
 3. Patch STAGE via patch_slides[].stage:
-   - add_objects: [{kind:"arrow", direction:"down", below_object_id:"box_title"}] etc.
-   - add_objects: [{kind:"text", body:"..."}]
-   - trains: length_km, speed_a/b, direction_a/b, move_a/move_b
-   - boxes: direction left|right|up|down — ONLY for motion of existing boxes
-   - use_trains_scene / use_boxes_scene to switch scene type
+   - update_objects / remove_objects
+   - add_objects: [{kind:"arrow"|"text"|"code", ...}]
+   - trains / boxes motion
+   - use_trains_scene / use_boxes_scene
 4. replace_slides only for heavy rebuilds
 5. no_action=true if they only ask a question
 
-Placement tips for arrows:
-- "below the topic / title box" → below_object_id="box_title" (or matching object id from stage.objects)
-- "below the equation" → below_object_id="box_equation"
-- "downward arrow" → kind=arrow, direction=down
-- If they say "all slides", emit one patch_slides entry per slide number with the same add_objects
+Object matching tips (use match OR object_id from stage.objects):
+- topic / title / topic box → usually id "box_title", label "Topic"
+- equation / equation box / code → "box_equation" or objects with role box.code
+- Prefer exact object_id from context when available.
 
 Rules:
 - Stay on the lecture's subject.
 - Prefer patch_slides for small edits.
-- When the educator says "this slide" / "the current slide" / "here", use current_slide_number from context.
+- When the educator says "this slide" / "the current slide" / "here", use current_slide_number.
+- If they say "all slides", emit one patch_slides entry per slide with the same stage edits.
 - visual_type: equation, graph, triangle, circle, trains.
-- In message, say clearly whether you ADDED an object or changed MOTION.
+- In message, describe ONLY what you actually did. Be honest.
 """
 
 
@@ -214,6 +316,66 @@ def _dir_to_east_west(word: str | None) -> str | None:
     return None
 
 
+_OBJECT_MATCH_ALIASES: dict[str, tuple[str, ...]] = {
+    "topic": ("box_title",),
+    "title": ("box_title",),
+    "topic box": ("box_title",),
+    "title box": ("box_title",),
+    "equation": ("box_equation",),
+    "equation box": ("box_equation",),
+    "callout": ("box_callout",),
+    "key idea": ("box_explain",),
+    "explain": ("box_explain",),
+    "explanation": ("box_explain",),
+    "role": ("text_role",),
+}
+
+
+def _normalize_match(value: str) -> str:
+    return " ".join(value.strip().lower().replace("_", " ").replace(".", " ").split())
+
+
+def _resolve_object_id(scene: dict[str, Any], *, object_id: str | None, match: str | None) -> str | None:
+    objects = [o for o in (scene.get("objects") or []) if isinstance(o, dict)]
+    if not objects:
+        return None
+
+    by_id = {str(o.get("id")): o for o in objects if o.get("id") is not None}
+
+    if object_id and object_id in by_id:
+        return object_id
+
+    needle = _normalize_match(match or object_id or "")
+    if not needle:
+        return None
+
+    for alias, ids in _OBJECT_MATCH_ALIASES.items():
+        if needle == alias or needle == _normalize_match(alias):
+            for oid in ids:
+                if oid in by_id:
+                    return oid
+
+    if needle in by_id:
+        return needle
+
+    for oid, obj in by_id.items():
+        label = _normalize_match(str(obj.get("label") or ""))
+        role = _normalize_match(str(obj.get("role") or ""))
+        body = _normalize_match(str(obj.get("body") or ""))
+        if needle == label or needle == role:
+            return oid
+        if needle in label or needle in role:
+            return oid
+        if needle and needle in body[:80]:
+            return oid
+        # role like box.title → title
+        role_tail = role.split()[-1] if role else ""
+        if needle == role_tail:
+            return oid
+
+    return None
+
+
 def _scene_summary(slide: dict[str, Any]) -> dict[str, Any] | None:
     scene = slide.get("scene")
     if not isinstance(scene, dict):
@@ -225,7 +387,19 @@ def _scene_summary(slide: dict[str, Any]) -> dict[str, Any] | None:
             "train_a": scene.get("train_a"),
             "train_b": scene.get("train_b"),
             "length_km": (scene.get("track") or {}).get("length_km"),
-            "hint": "Edit with stage.trains or trains (direction east/west, speeds).",
+            "objects": [
+                {
+                    "id": o.get("id"),
+                    "label": o.get("label"),
+                    "role": o.get("role"),
+                    "body": (str(o.get("body") or ""))[:120] or None,
+                    "x": o.get("x"),
+                    "y": o.get("y"),
+                }
+                for o in (scene.get("objects") or [])
+                if isinstance(o, dict)
+            ],
+            "hint": "Edit with stage.trains, or update_objects / remove_objects / add_objects.",
         }
     if stype == "basic_boxes":
         return {
@@ -235,16 +409,21 @@ def _scene_summary(slide: dict[str, Any]) -> dict[str, Any] | None:
                     "id": o.get("id"),
                     "label": o.get("label"),
                     "role": o.get("role"),
+                    "body": (str(o.get("body") or ""))[:160] or None,
                     "x": o.get("x"),
                     "y": o.get("y"),
+                    "width": o.get("width"),
+                    "height": o.get("height"),
                 }
                 for o in (scene.get("objects") or [])
                 if isinstance(o, dict)
             ],
             "motionCues": scene.get("motionCues") or [],
             "hint": (
-                "To ADD a visible arrow use stage.add_objects "
-                "[{kind:'arrow', direction:'down', below_object_id:'box_title'}]. "
+                "To CHANGE an existing box use stage.update_objects. "
+                "To DELETE use stage.remove_objects. "
+                "To ADD code samples use stage.add_objects [{kind:'code', language:'JavaScript', body:'full source'}]. "
+                "kind=text is only for short prose — never for code. "
                 "stage.boxes.direction only changes slide-in animation."
             ),
         }
@@ -345,11 +524,22 @@ def _rebuild_scene_for_text(slide: dict[str, Any]) -> dict[str, Any]:
     return slide
 
 
+def _empty_boxes_scene() -> dict[str, Any]:
+    return {
+        "type": "basic_boxes",
+        "width": 900,
+        "height": 480,
+        "objects": [],
+        "motionCues": [],
+    }
+
+
 def _apply_add_objects(slide: dict[str, Any], items: list[AddStageObject]) -> list[str]:
     notes: list[str] = []
     scene = slide.get("scene") if isinstance(slide.get("scene"), dict) else None
     if not scene:
-        scene = create_basic_boxes_scene(slide)
+        # Prefer empty canvas over regenerating showcase boxes when adding objects.
+        scene = _empty_boxes_scene()
         slide["visual_type"] = slide.get("visual_type") or "equation"
         if slide["visual_type"] == "trains":
             slide["visual_type"] = "equation"
@@ -367,14 +557,114 @@ def _apply_add_objects(slide: dict[str, Any], items: list[AddStageObject]) -> li
             notes.append(
                 f"Added a visible {item.direction or 'down'} arrow on the stage."
             )
-        elif item.kind == "text":
-            scene = add_text_object_to_scene(
+        elif item.kind == "code":
+            code_body = (item.body or "").strip()
+            if not code_body or len(code_body) < 12:
+                notes.append(
+                    "Skipped code object — body must contain the full source sample."
+                )
+                continue
+            scene = add_code_object_to_scene(
                 scene,
-                body=item.body or "New text",
+                body=code_body,
+                language=item.language,
                 x=item.x,
                 y=item.y,
             )
-            notes.append("Added a text object on the stage.")
+            notes.append(
+                f"Added a {item.language or 'code'} sample panel on the stage."
+            )
+        elif item.kind == "text":
+            # Guardrail: if the model mistakenly used text for source code, promote to code.
+            body = item.body or "New text"
+            if (
+                "function " in body
+                or "const " in body
+                or "def " in body
+                or body.count("\n") >= 2
+            ) and any(ch in body for ch in "{};"):
+                scene = add_code_object_to_scene(
+                    scene,
+                    body=body,
+                    language=item.language,
+                    x=item.x,
+                    y=item.y,
+                )
+                notes.append("Added a code sample panel on the stage (promoted from text).")
+            else:
+                scene = add_text_object_to_scene(
+                    scene,
+                    body=body,
+                    x=item.x,
+                    y=item.y,
+                )
+                notes.append("Added a text object on the stage.")
+
+    slide["scene"] = scene
+    return notes
+
+
+def _apply_update_objects(slide: dict[str, Any], items: list[UpdateStageObject]) -> list[str]:
+    notes: list[str] = []
+    scene = slide.get("scene") if isinstance(slide.get("scene"), dict) else None
+    if not scene:
+        notes.append("Skipped object updates — no stage on this slide.")
+        return notes
+
+    for item in items:
+        oid = _resolve_object_id(scene, object_id=item.object_id, match=item.match)
+        if not oid:
+            notes.append(
+                f"Could not find stage object to update "
+                f"(id={item.object_id!r}, match={item.match!r})."
+            )
+            continue
+        before = next(
+            (o for o in (scene.get("objects") or []) if isinstance(o, dict) and o.get("id") == oid),
+            None,
+        )
+        scene = update_object_in_scene(
+            scene,
+            oid,
+            label=item.label,
+            body=item.body,
+            x=item.x,
+            y=item.y,
+            width=item.width,
+            height=item.height,
+        )
+        bits: list[str] = []
+        if item.label is not None:
+            old = (before or {}).get("label")
+            bits.append(f"label {old!r} → {item.label!r}")
+        if item.body is not None:
+            bits.append("body text")
+        if any(v is not None for v in (item.x, item.y, item.width, item.height)):
+            bits.append("position/size")
+        detail = ", ".join(bits) if bits else "fields"
+        notes.append(f"Updated stage object '{oid}' ({detail}).")
+
+    slide["scene"] = scene
+    return notes
+
+
+def _apply_remove_objects(slide: dict[str, Any], items: list[RemoveStageObject]) -> list[str]:
+    notes: list[str] = []
+    scene = slide.get("scene") if isinstance(slide.get("scene"), dict) else None
+    if not scene:
+        notes.append("Skipped object removals — no stage on this slide.")
+        return notes
+
+    for item in items:
+        oid = _resolve_object_id(scene, object_id=item.object_id, match=item.match)
+        if not oid:
+            notes.append(
+                f"Could not find stage object to remove "
+                f"(id={item.object_id!r}, match={item.match!r})."
+            )
+            continue
+        scene = remove_object_from_scene(scene, oid)
+        notes.append(f"Removed stage object '{oid}'.")
 
     slide["scene"] = scene
     return notes
@@ -395,6 +685,11 @@ def _apply_stage_patch(slide: dict[str, Any], stage: StagePatch) -> list[str]:
             _apply_boxes_patch(slide, stage.boxes)
             notes.append(f"Boxes now slide toward {stage.boxes.direction}.")
 
+    # Prefer mutate-in-place before adds so renames don't get confused with new text.
+    if stage.update_objects:
+        notes.extend(_apply_update_objects(slide, stage.update_objects))
+    if stage.remove_objects:
+        notes.extend(_apply_remove_objects(slide, stage.remove_objects))
     if stage.add_objects:
         notes.extend(_apply_add_objects(slide, stage.add_objects))
 
@@ -438,6 +733,8 @@ def _apply_intent(lecture: Lecture, intent: LectureEditIntent) -> list[str]:
                 if value is not None:
                     target[field] = value
                     text_changed = True
+            if patch.checkpoint is not None:
+                target["checkpoint"] = patch.checkpoint.model_dump()
 
             stage_notes: list[str] = []
             if patch.stage is not None:
@@ -453,7 +750,10 @@ def _apply_intent(lecture: Lecture, intent: LectureEditIntent) -> list[str]:
 
     if intent.replace_slides is not None or intent.patch_slides:
         # Keep explicit scenes from patches; only fill missing ones
-        lecture.slides = materialize_slides(slides)
+        lecture.slides = materialize_slides(
+            slides,
+            subject=normalize_subject(getattr(lecture, "subject", None)),
+        )
         flag_modified(lecture, "slides")
 
     return notes
@@ -484,7 +784,10 @@ async def process_lecture_edit(
     if draft_title is not None and draft_title.strip():
         lecture.title = draft_title.strip()
     if draft_slides is not None:
-        lecture.slides = materialize_slides(list(draft_slides))
+        lecture.slides = materialize_slides(
+            list(draft_slides),
+            subject=normalize_subject(getattr(lecture, "subject", None)),
+        )
         flag_modified(lecture, "slides")
 
     subject = normalize_subject(getattr(lecture, "subject", None))
@@ -503,15 +806,18 @@ async def process_lecture_edit(
         "includes_unsaved_draft": draft_slides is not None or draft_title is not None,
         "slides": [_strip_slide(s if isinstance(s, dict) else {}) for s in slides],
         "note": (
-            "Each slide has text fields AND a stage with objects. "
-            "To ADD a visible arrow/text use stage.add_objects. "
+            "Each slide has text fields AND a stage with objects (see stage.objects id/label/body). "
+            "To CHANGE an existing object use stage.update_objects. "
+            "To DELETE use stage.remove_objects. "
+            "For programming samples use stage.add_objects with kind=code and FULL source in body "
+            "(never kind=text for code). "
             "stage.boxes only changes slide-in motion of existing boxes. "
             "If includes_unsaved_draft is true, this snapshot already includes the educator's "
             "unsaved stage edits — build on them, do not revert them."
         ),
     }
 
-    llm = ChatOpenAI(temperature=0.3, model=_assistant_model(), api_key=api_key)
+    llm = build_chat_model(temperature=0.3, model=_assistant_model(), api_key=api_key)
     structured = llm.with_structured_output(LectureEditIntent, method="function_calling")
 
     system = (
@@ -553,13 +859,19 @@ async def process_lecture_edit(
     await db.commit()
     await db.refresh(lecture)
 
-    message = (intent.message or "").strip()
+    message = (intent.message or "").strip() or "Lecture updated."
     if notes:
-        message = (message + "\n\n" if message else "") + "\n".join(notes)
+        logger.info(
+            "lecture_edit lecture_id=%s user_id=%s details=%s",
+            lecture.id,
+            user.id,
+            notes,
+        )
 
     from app.services.lecture_services import to_response
 
     return LectureEditResponse(
-        message=message or "Lecture updated.",
+        message=message,
         lecture=to_response(lecture, viewer=user),
+        details=notes,
     )

@@ -6,10 +6,11 @@ import os
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+
+from app.services.ai_services.llm_client import build_chat_model
 from pydantic import BaseModel, Field
 
-_MAX_IMAGE_DATA_URL_LEN = 4_000_000
+from app.services.ai_services.pasted_image_data import normalize_image_data_url
 
 _EQUATION_OCR_SYSTEM = """\
 You extract math equations from images for a visual learning app.
@@ -17,7 +18,9 @@ Return exactly one equation or expression in plain text on a single line.
 
 Rules:
 - Prefer LaTeX for roots: \\sqrt{2x+5} - x = 1 (not sqrt(...)).
-- Use standard operators: + - * / = and parentheses.
+- Limits: \\lim_{x \\to 3} (x^2 + 5x - 4). Derivatives: \\frac{d}{dx}(x^3) or f'(x).
+- Use standard operators: + - * / = and plain parentheses ( ).
+- Never wrap the answer in math delimiters: no \\( \\), \\[ \\], or $ signs.
 - Preserve variables (x, y, m, n, etc.) exactly as shown.
 - Do not add words like "Solve" — only the math.
 - If multiple lines exist, return the main equation only.
@@ -25,6 +28,12 @@ Rules:
 """
 
 _WHITESPACE = re.compile(r"\s+")
+_MATH_DELIMITERS = re.compile(r"\\[\(\)\[\]]|\$+")
+_LIMIT_HINT = re.compile(r"\\lim\b|\blim\b|x\s*(?:->|→|\\to)", re.IGNORECASE)
+_DERIVATIVE_HINT = re.compile(
+    r"\\frac\{d\}\{d[a-z]\}|\bd/d[a-z]\b|\bd[a-z]/d[a-z]\b|[a-zA-Z]\s*'\s*\(|derivative",
+    re.IGNORECASE,
+)
 
 
 class EquationOcrResult(BaseModel):
@@ -37,24 +46,25 @@ def _vision_model() -> str:
     return os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini")
 
 
-def normalize_image_data_url(value: str) -> str:
-    """Accept a data URL or raw base64 and return a vision-ready data URL."""
-    cleaned = (value or "").strip()
-    if not cleaned:
-        raise ValueError("Equation image is empty.")
-    if len(cleaned) > _MAX_IMAGE_DATA_URL_LEN:
-        raise ValueError("Equation image is too large. Paste a smaller screenshot.")
-    if cleaned.startswith("data:"):
-        if not cleaned.startswith("data:image/"):
-            raise ValueError("Only image files are supported for equation paste.")
-        return cleaned
-    return f"data:image/png;base64,{cleaned}"
-
-
 def normalize_equation_text(equation: str) -> str:
-    text = _WHITESPACE.sub(" ", (equation or "").strip())
+    text = (equation or "").strip()
+    # OCR models often wrap parts in \( \) or $ — those break KaTeX downstream.
+    text = _MATH_DELIMITERS.sub(lambda m: "(" if m.group(0) == "\\(" else ")" if m.group(0) == "\\)" else "", text)
+    text = _WHITESPACE.sub(" ", text).strip()
     text = text.strip("`\"'")
     return text
+
+
+def default_instruction_for_equation(equation: str) -> str:
+    """Pick the task wording that matches the math read from the image."""
+    eq = equation or ""
+    if _LIMIT_HINT.search(eq):
+        return "Evaluate the limit"
+    if _DERIVATIVE_HINT.search(eq):
+        return "Find the derivative"
+    if "=" in eq:
+        return "Solve the equation"
+    return "Simplify the expression"
 
 
 def merge_prompt_with_equation(user_text: str, equation: str) -> str:
@@ -64,9 +74,7 @@ def merge_prompt_with_equation(user_text: str, equation: str) -> str:
         raise ValueError("Could not read an equation from the pasted image.")
     text = (user_text or "").strip()
     if not text:
-        if "=" in eq:
-            return f"Solve the equation: {eq}"
-        return f"Simplify the expression: {eq}"
+        return f"{default_instruction_for_equation(eq)}: {eq}"
     return f"{text}\n\nEquation from image: {eq}"
 
 
@@ -74,7 +82,7 @@ async def extract_equation_from_image(image_data_url: str, *, api_key: str) -> s
     """OCR a math equation from a base64 data URL using a vision-capable model."""
     data_url = normalize_image_data_url(image_data_url)
 
-    llm = ChatOpenAI(
+    llm = build_chat_model(
         temperature=0,
         model=_vision_model(),
         api_key=api_key,
@@ -92,7 +100,7 @@ async def extract_equation_from_image(image_data_url: str, *, api_key: str) -> s
                     {"type": "image_url", "image_url": {"url": data_url}},
                 ],
             ),
-        ],
+        ]
     )
     if result is None:
         raise ValueError("Could not read an equation from the pasted image.")

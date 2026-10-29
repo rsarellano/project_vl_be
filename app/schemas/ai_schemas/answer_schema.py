@@ -35,15 +35,22 @@ class AnswerCreate(BaseModel):
     subject_domain: SubjectDomain | None = None
     equation_image: str | None = Field(
         default=None,
-        description="Optional base64 data URL of a pasted equation image.",
+        description="Optional base64 data URL of a pasted math equation screenshot.",
+    )
+    programming_image: str | None = Field(
+        default=None,
+        description="Optional base64 data URL of a pasted coding-problem screenshot (LeetCode, etc.).",
     )
 
     @model_validator(mode="after")
     def require_prompt_or_image(self) -> AnswerCreate:
         has_prompt = bool((self.prompt or "").strip())
-        has_image = bool((self.equation_image or "").strip())
-        if not has_prompt and not has_image:
-            raise ValueError("Provide a prompt or paste an equation image.")
+        has_math = bool((self.equation_image or "").strip())
+        has_code = bool((self.programming_image or "").strip())
+        if has_math and has_code:
+            raise ValueError("Send either an equation image or a programming image, not both.")
+        if not has_prompt and not has_math and not has_code:
+            raise ValueError("Provide a prompt or paste a question image.")
         return self
 
 
@@ -52,12 +59,33 @@ class AnswerRead(BaseModel):
     prompt: str
     answer: str
     extracted_equation: str | None = None
+    extracted_kind: str | None = None
     question_type: str | None = None
     blueprint: InfographicBlueprint | None = None
     stage: DrawingStage | None = None
     created_at: datetime
+    saved: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class AnswerSummary(BaseModel):
+    id: UUID
+    prompt: str
+    title: str | None = None
+    question_type: str | None = None
+    created_at: datetime
+
+
+class StepFollowUpRead(BaseModel):
+    step_id: str
+    question: str
+    answer: str
+    created_at: datetime
+
+
+class AnswerDetail(AnswerRead):
+    follow_ups: list[StepFollowUpRead] = Field(default_factory=list)
 
 
 class StepFollowUpRequest(BaseModel):

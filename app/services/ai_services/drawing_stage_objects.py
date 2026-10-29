@@ -21,9 +21,15 @@ This module exists to:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from app.services.ai_services.pasted_code import extract_pasted_code, looks_like_coding_request
+from app.services.ai_services.pasted_code import (
+    extract_pasted_code,
+    looks_like_coding_request,
+    looks_like_problem_statement,
+    user_asked_to_implement,
+)
 
 # =============================================================================
 # 1. Canonical canvas constants
@@ -90,6 +96,10 @@ def _is_code_display_item(obj: Any) -> bool:
     return isinstance(obj, dict) and obj.get("CodeDisplay") is True
 
 
+def _is_answer_box_item(obj: Any) -> bool:
+    return _is_box_item(obj) and obj.get("AnswerBox") is True
+
+
 def _is_code_map_stage(stage_payload: dict[str, Any]) -> bool:
     if stage_payload.get("layoutMode") == "code-map":
         return True
@@ -114,9 +124,8 @@ def coerce_text_field(value: Any) -> str | list[str] | None:
         lines: list[str] = []
         for item in value:
             if isinstance(item, str):
-                stripped = item.strip()
-                if stripped:
-                    lines.append(stripped)
+                if item.strip():
+                    lines.append(item.rstrip("\n"))
             elif isinstance(item, dict):
                 coerced = coerce_text_field(item)
                 if isinstance(coerced, str) and coerced.strip():
@@ -292,11 +301,20 @@ def _normalize_code_map_stage(stage_payload: dict[str, Any]) -> None:
         obj["portions"] = cleaned
 
     # Code-map uses TextCreation-free layout; drop role labels.
+    # Keep linked explain cards and the optional bottom AnswerBox.
+    for obj in objects:
+        if _is_answer_box_item(obj):
+            obj.pop("linkedPortion", None)
+
     objects[:] = [
         obj
         for obj in objects
         if not _is_text_item(obj)
-        and (not _is_box_item(obj) or obj.get("linkedPortion"))
+        and (
+            not _is_box_item(obj)
+            or obj.get("linkedPortion")
+            or _is_answer_box_item(obj)
+        )
     ]
 
     # Drop trunk-only boxes without linkedPortion in code-map mode.
@@ -310,6 +328,7 @@ def _normalize_code_map_stage(stage_payload: dict[str, Any]) -> None:
         for obj in objects
         if _is_code_display_item(obj)
         or (_is_box_item(obj) and obj.get("linkedPortion") in portion_ids)
+        or _is_answer_box_item(obj)
     ]
 
     # Frontend auto-wires connectors from linkedPortion; omit stale trunk links.
@@ -363,10 +382,18 @@ def _upgrade_trunk_coding_to_code_map(stage_payload: dict[str, Any]) -> None:
     if not code_lines:
         return
 
+    answer_boxes = [
+        obj
+        for obj in objects
+        if isinstance(obj, dict) and _is_answer_box_item(obj)
+    ]
     trunk_boxes = [
         obj
         for obj in objects
-        if isinstance(obj, dict) and _is_box_item(obj) and not obj.get("linkedPortion")
+        if isinstance(obj, dict)
+        and _is_box_item(obj)
+        and not obj.get("linkedPortion")
+        and not _is_answer_box_item(obj)
     ]
     if not trunk_boxes:
         return
@@ -412,6 +439,7 @@ def _upgrade_trunk_coding_to_code_map(stage_payload: dict[str, Any]) -> None:
             "portions": portions,
         },
         *linked_boxes,
+        *answer_boxes,
     ]
     stage_payload["connections"] = []
 
@@ -440,6 +468,52 @@ def _inject_pasted_code_when_mismatched(
             obj["text"] = list(pasted.lines)
             obj["language"] = pasted.language
         return
+
+
+_EXAMPLE_OUTPUT = re.compile(
+    r"(?:example\s*1[^\n]{0,80})?output\s*:\s*([^\n]+)",
+    re.IGNORECASE,
+)
+
+
+def _answer_text_from_problem_prompt(prompt: str) -> list[str]:
+    """Pull a first-example result from a LeetCode-style prompt when the model forgets AnswerBox."""
+    text = prompt or ""
+    lines: list[str] = []
+    match = _EXAMPLE_OUTPUT.search(text)
+    if match:
+        result = match.group(1).strip().strip("*` ").strip()
+        if result:
+            lines.append(f"Example 1 → {result[:120]}")
+    complexity = re.search(r"\bO\([^)]+\)", text)
+    if complexity:
+        lines.append(f"{complexity.group(0)} time")
+    if not lines:
+        lines = ["See the working solution in the code panel."]
+    return lines
+
+
+def _ensure_code_map_answer_box(stage_payload: dict[str, Any], prompt: str) -> None:
+    """Guarantee a bottom answer card on solution / problem-statement diagrams."""
+    if not _is_code_map_stage(stage_payload):
+        return
+    if not (
+        looks_like_problem_statement(prompt) or user_asked_to_implement(prompt)
+    ):
+        return
+    objects = stage_payload.get("objects")
+    if not isinstance(objects, list):
+        return
+    if any(_is_answer_box_item(obj) for obj in objects if isinstance(obj, dict)):
+        return
+    objects.append(
+        {
+            "id": "answer",
+            "BoxCreation": True,
+            "AnswerBox": True,
+            "text": _answer_text_from_problem_prompt(prompt),
+        }
+    )
 
 
 # =============================================================================
@@ -536,6 +610,7 @@ def improve_stage_quality(
     _normalize_code_map_stage(stage_payload)
     _inject_pasted_code_when_mismatched(stage_payload, prompt)
     _normalize_code_map_stage(stage_payload)
+    _ensure_code_map_answer_box(stage_payload, prompt)
     _sanitize_connections(stage_payload)
     if not wants_code_map and not any(
         o.get("CodeDisplay") is True for o in stage_payload.get("objects", []) if isinstance(o, dict)

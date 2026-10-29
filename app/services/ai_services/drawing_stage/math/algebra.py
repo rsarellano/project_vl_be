@@ -2,6 +2,7 @@
 
 from app.services.ai_services.drawing_stage._prompt_types import SubtypePrompt
 from app.services.ai_services.drawing_stage._trunk_contract import math_produce_line, math_trunk_system_prompt
+from app.services.ai_services.drawing_stage.math.trig_equations import TRIG_EQUATION_PEDAGOGY
 
 EXAMPLE = """{
   "width": 1400,
@@ -62,7 +63,8 @@ keep ``BoxCreation.text`` as plain strings only — never beat objects.
 Each equation-transform box needs ``derivation.beats`` that explain WHY and **both sides** \
 (e.g. left ``sqrt(2x+5)`` → ``2x+5``; right ``(x+1)^2`` → ``x^2 + 2x + 1`` when expanding).
 - Use symbols consistently; do not skip algebraic steps the learner must see.
-- Every combine/simplify/solve box that shows new math MUST include ``derivation`` (see Layer 2 rules)."""
+- Every combine/simplify/solve box that shows new math MUST include ``derivation`` (see Layer 2 rules).
+""" + TRIG_EQUATION_PEDAGOGY
 
 SYSTEM = math_trunk_system_prompt(
     title="You design **algebra** diagrams (equations and symbolic solving).",

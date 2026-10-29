@@ -19,7 +19,21 @@ EXAMPLE = """{
       "text": ["// user's code", "..."],
       "portions": [{ "id": "main", "lines": [0, 1], "label": "Main" }]
     },
-    { "id": "explain-main", "BoxCreation": true, "linkedPortion": "main", "text": ["Explain this", "block"] }
+    {
+      "id": "explain-main",
+      "BoxCreation": true,
+      "linkedPortion": "main",
+      "text": ["Explain this", "block"],
+      "derivation": {
+        "fromStepId": "source",
+        "beats": [
+          { "type": "note", "text": "Start from what this block is responsible for." },
+          { "type": "expression", "text": "// key line from the portion" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "Teach what the code does and why that matters for the learner's question." }
+        ]
+      }
+    }
   ],
   "connections": []
 }"""

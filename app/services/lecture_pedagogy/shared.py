@@ -12,7 +12,8 @@ Use these slide_role values in order when they fit the topic:
 2. concept — formal definition or core idea
 3. worked_example — step-by-step solution (show every move)
 4. practice — a second example students try mentally
-5. check — common mistake + correct fix
+5. check — common mistake + correct fix; MUST include a checkpoint question
+   students answer before the next slide (see CHECKPOINT below)
 6. summary — takeaways + when to use this idea
 
 Every slide must be teachable alone:
@@ -30,4 +31,15 @@ Write content that FILLS a rich stage:
 - Avoid vague titles like "Introduction" — be specific.
 - For relative-motion word problems only, visual_type may be "trains".
 - Otherwise use "equation", "graph", "triangle", or "circle" to hint at shape accents.
+
+## CHECKPOINT (required when slide_role is check)
+On every check slide, fill ``checkpoint`` so students must attempt a subject question
+before they continue. Other roles should leave checkpoint empty unless the educator
+asked for extra checks.
+- prompt: one short question tied to this lecture (not a generic "did you get it?").
+- Math: algebra-style. kind may be "numeric" (numericAnswer like "3" or "x = 3")
+  or "multiple_choice". Prefer a real compute/solve item from the worked example.
+- Coding / Science / General: kind "multiple_choice" only.
+- choices: 2–4 options, exactly one with correct=true. Distractors = common mistakes.
+- explanation: 1–2 sentences shown after they try (the correct fix).
 """

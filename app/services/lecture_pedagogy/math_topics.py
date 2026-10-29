@@ -44,6 +44,21 @@ FUNCTIONS = """
 - visual_type: prefer "graph" or "equation"; avoid trains unless the story is literally relative motion.
 """
 
+CALCULUS = """
+## Topic pedagogy: CALCULUS 1
+- Teach limits and derivatives as calculus moves. Never relabel a limit as "simplify the expression".
+- Keep the full statement: lim x -> a and every term, including powers such as x^2.
+- Limits of polynomials: say the function is defined at the point, substitute, then show the arithmetic.
+  Example: lim x -> 3 (x^2 + 5x - 4) = 3^2 + 5(3) - 4 = 20.
+- Indeterminate limits (0/0): factor, cancel, or rationalize, then substitute. Do not stop at 0/0.
+- One-sided limits and limits at infinity get their own step: which side, or divide by the highest power.
+- Derivatives: name the rule (power, sum, product, quotient, chain), show the rewrite, then state f'(x).
+- Tangent line: slope from the derivative at the point, then point-slope form.
+- callout ideas: "Defined here, so substitute", "0/0 means more work", "Power rule lowers the exponent by 1".
+- visual_type: "equation" for limits and derivatives; "graph" only for a tangent line or end behavior.
+- Integrals, related rates, and optimization are later. Stay on limits, continuity, derivatives, and tangent lines.
+"""
+
 GENERAL_MATH = """
 ## Topic pedagogy: GENERAL MATH
 - Keep a clear definition → example → check → takeaway arc.
@@ -54,6 +69,7 @@ GENERAL_MATH = """
 
 # slug → pedagogy block
 MATH_TOPIC_PEDAGOGY: dict[str, str] = {
+    "calculus": CALCULUS,
     "algebra": ALGEBRA,
     "trigonometry": TRIGONOMETRY,
     "geometry": GEOMETRY,
@@ -62,6 +78,7 @@ MATH_TOPIC_PEDAGOGY: dict[str, str] = {
 }
 
 MATH_TOPIC_LABELS: dict[str, str] = {
+    "calculus": "Calculus 1",
     "algebra": "Algebra",
     "trigonometry": "Trigonometry",
     "geometry": "Geometry",
@@ -71,6 +88,25 @@ MATH_TOPIC_LABELS: dict[str, str] = {
 
 # Keyword hints used to infer topic from the educator prompt when topic is not explicit.
 MATH_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "calculus": (
+        "calculus",
+        "derivative",
+        "differentiate",
+        "differentiation",
+        "d/dx",
+        "dy/dx",
+        "limit",
+        "lim ",
+        "lim(",
+        "continuity",
+        "tangent line",
+        "power rule",
+        "product rule",
+        "quotient rule",
+        "chain rule",
+        "x->",
+        "x →",
+    ),
     "trigonometry": (
         "trig",
         "trigonometry",

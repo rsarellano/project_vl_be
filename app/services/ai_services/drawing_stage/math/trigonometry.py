@@ -2,6 +2,7 @@
 
 from app.services.ai_services.drawing_stage._prompt_types import SubtypePrompt
 from app.services.ai_services.drawing_stage._trunk_contract import math_produce_line, math_trunk_system_prompt
+from app.services.ai_services.drawing_stage.math.trig_equations import TRIG_EQUATION_PEDAGOGY
 
 EXAMPLE = """{
   "width": 1400,
@@ -146,7 +147,15 @@ Always explain WHY the chosen ratio is correct:
 
 ### Use actual degree symbols
 
-Use the actual ``°`` character, not ``\\circ``. The frontend handles conversion automatically."""
+Use the actual ``°`` character, not ``\\circ``. The frontend handles conversion automatically.
+
+### Solving an equation for the angle
+
+Right-triangle steps above are for a missing side or a missing acute angle. \
+When the problem is an equation in ``sin``, ``cos``, or ``tan`` (identity, factor, general solution), \
+skip the triangle and use ordinary step boxes.
+
+""" + TRIG_EQUATION_PEDAGOGY
 
 SYSTEM = math_trunk_system_prompt(
     title="You design **trigonometry** diagrams (right-triangle SOH CAH TOA, inverse trig).",
@@ -160,10 +169,9 @@ PROMPT = SubtypePrompt(
     layout_mode="math",
     system=SYSTEM,
     human_hint=(
-        "Use SOH CAH TOA to select the correct ratio. "
-        "Step 1 must include a trig_scene beat with the triangle diagram. "
-        "Explain WHY that ratio was chosen. "
-        "Final step should include a trig_scene with the solution. "
+        "Right triangles: use SOH CAH TOA, a trig_scene on step 1, and a trig_scene on the final step. "
+        "Equations in sin, cos, or tan: do not draw a triangle. "
+        "List every angle in one full turn. cos(x) = 1/2 is 60° and 300°, not 60° alone. "
         "Include derivation.beats on every step."
     ),
     produce_line=f"Produce one trigonometry DrawingStage. {math_produce_line()}",

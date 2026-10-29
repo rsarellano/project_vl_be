@@ -8,6 +8,7 @@ from .admin_router import admin_router
 from .presence_router import presence_router
 from .lecture_router import lecture_router
 from .asset_router import asset_router
+from .billing_router import billing_router
 
 router = APIRouter(prefix="/api")
 
@@ -19,3 +20,4 @@ router.include_router(admin_router)
 router.include_router(presence_router)
 router.include_router(lecture_router)
 router.include_router(asset_router)
+router.include_router(billing_router)

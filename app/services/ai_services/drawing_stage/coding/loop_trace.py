@@ -24,10 +24,71 @@ EXAMPLE = """{
         { "id": "inc", "lines": [0, 0], "label": "Increment" }
       ]
     },
-    { "id": "explain-init", "BoxCreation": true, "linkedPortion": "init", "text": ["Inside the for-loop", "header: let i = 0", "i starts at 0"] },
-    { "id": "explain-check", "BoxCreation": true, "linkedPortion": "check", "text": ["Condition: i < 3", "Must be true to", "enter the body"] },
-    { "id": "explain-body", "BoxCreation": true, "linkedPortion": "body", "text": ["Body runs when", "condition is true", "console.log(i)"] },
-    { "id": "explain-inc", "BoxCreation": true, "linkedPortion": "inc", "text": ["i++ runs after", "each body pass", "then re-check i < 3"] }
+    {
+      "id": "explain-init",
+      "BoxCreation": true,
+      "linkedPortion": "init",
+      "text": ["Inside the for-loop", "header: let i = 0", "i starts at 0"],
+      "derivation": {
+        "fromStepId": "source",
+        "beats": [
+          { "type": "note", "text": "Initialization runs once, before any body pass." },
+          { "type": "expression", "text": "let i = 0" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "Inside the for-loop header, let i = 0 — the counter starts at zero." },
+          { "type": "explain", "text": "After this, control moves to the Check portion before the body can run." }
+        ]
+      }
+    },
+    {
+      "id": "explain-check",
+      "BoxCreation": true,
+      "linkedPortion": "check",
+      "text": ["Condition: i < 3", "Must be true to", "enter the body"],
+      "derivation": {
+        "fromStepId": "explain-init",
+        "beats": [
+          { "type": "note", "text": "The condition is evaluated before every body run." },
+          { "type": "expression", "text": "i < 3" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "Iteration 1: i = 0, i < 3 is true — enter the body." },
+          { "type": "explain", "text": "Iteration 2: i = 1, i < 3 is true — enter the body again." },
+          { "type": "explain", "text": "Iteration 3: i = 2, i < 3 is true — enter the body again." },
+          { "type": "explain", "text": "Iteration 4: i = 3, i < 3 is false — loop stops." }
+        ]
+      }
+    },
+    {
+      "id": "explain-body",
+      "BoxCreation": true,
+      "linkedPortion": "body",
+      "text": ["Body runs when", "condition is true", "console.log(i)"],
+      "derivation": {
+        "fromStepId": "explain-check",
+        "beats": [
+          { "type": "note", "text": "The body only runs when Check returned true." },
+          { "type": "expression", "text": "console.log(i);" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "Each true pass prints the current i, then control goes to Increment." }
+        ]
+      }
+    },
+    {
+      "id": "explain-inc",
+      "BoxCreation": true,
+      "linkedPortion": "inc",
+      "text": ["i++ runs after", "each body pass", "then re-check i < 3"],
+      "derivation": {
+        "fromStepId": "explain-body",
+        "beats": [
+          { "type": "note", "text": "Increment updates the counter after the body, then Check runs again." },
+          { "type": "expression", "text": "i++" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "i++ means i becomes i + 1 after each body pass." },
+          { "type": "explain", "text": "Then control returns to Check with the new i." }
+        ]
+      }
+    }
   ],
   "connections": []
 }"""

@@ -153,5 +153,11 @@ async def logout_user(request: Request, response: Response, db: AsyncSession) ->
             await db.delete(db_token)
             await db.commit()
 
-    response.delete_cookie("token")
+    response.delete_cookie(
+        "token",
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=False,
+    )
     return {"success": True}

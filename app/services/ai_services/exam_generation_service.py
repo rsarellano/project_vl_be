@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+
+from app.services.ai_services.llm_client import build_chat_model
 from pydantic import BaseModel, Field
 
 from app.schemas.classroom_schemas.exam_schemas import ExamQuestion, GeneratedExam
@@ -60,7 +61,7 @@ async def generate_exam_from_prompt(meta_prompt: str) -> GeneratedExam:
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not configured.")
 
-    llm = ChatOpenAI(temperature=0.4, model=_exam_model(), api_key=api_key)
+    llm = build_chat_model(temperature=0.4, model=_exam_model(), api_key=api_key)
     structured = llm.with_structured_output(_ExamDraft, method="function_calling")
 
     draft: _ExamDraft = await structured.ainvoke(

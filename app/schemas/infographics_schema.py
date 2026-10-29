@@ -117,10 +117,22 @@ class MathDerivationBeatNote(BaseModel):
     text: str = Field(..., min_length=1)
 
 
+class CodeExpressionTokenHint(BaseModel):
+    """Per-token teaching note for code-map hover breakdown."""
+
+    lexeme: str = Field(..., min_length=1)
+    explain: str = Field(..., min_length=1)
+    line: Optional[int] = Field(
+        default=None,
+        description="1-based line within the expression this note belongs to.",
+    )
+
+
 class MathDerivationBeatExpression(BaseModel):
     type: Literal["expression"] = "expression"
     text: str = Field(..., min_length=1)
     id: Optional[str] = None
+    tokens: Optional[list[CodeExpressionTokenHint]] = None
 
 
 class MathDerivationBeatArrow(BaseModel):
@@ -207,12 +219,18 @@ class DrawingStageBoxCreationObject(DrawingStageBaseObject):
 
     In ``code-map`` layout, optional ``linkedPortion`` ties the box to a
     ``CodeDisplay.portions[]`` entry; the frontend positions it beside that
-    highlighted code region.
+    highlighted code region. Linked explain boxes should also emit
+    ``derivation.beats`` for the expanded "How this works" panel
+    (short ``text`` stays on the sticky card).
+
+    ``AnswerBox: true`` (no ``linkedPortion``) is the worked result card —
+    example output plus complexity — laid out under the code panel.
     """
 
     BoxCreation: Literal[True]
     text: Optional[Union[str, list[str]]] = None
     linkedPortion: Optional[str] = None
+    AnswerBox: Optional[bool] = None
     derivation: Optional[MathStepDerivation] = None
 
 

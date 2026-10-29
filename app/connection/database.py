@@ -76,6 +76,30 @@ async def _patch_legacy_answers_blueprint_column() -> None:
                 "ALTER TABLE answers ADD COLUMN IF NOT EXISTS blueprint JSONB"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE answers ADD COLUMN IF NOT EXISTS user_id UUID "
+                "REFERENCES users(id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_answers_user_id ON answers (user_id)"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE answers ADD COLUMN IF NOT EXISTS stage JSONB")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE answers ADD COLUMN IF NOT EXISTS question_type VARCHAR(80)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE answers ADD COLUMN IF NOT EXISTS extracted_equation TEXT"
+            )
+        )
 
 
 async def _patch_legacy_users_role_column() -> None:
@@ -127,6 +151,16 @@ async def _patch_legacy_lectures_publish_columns() -> None:
         )
 
 
+async def _patch_legacy_subscription_lemon_column() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS "
+                "lemon_subscription_id VARCHAR(40)"
+            )
+        )
+
+
 async def init_models():
     import_models()
     async with engine.begin() as conn:
@@ -136,3 +170,4 @@ async def init_models():
     await _patch_legacy_users_sa_access_column()
     await _patch_legacy_classrooms_settings_column()
     await _patch_legacy_lectures_publish_columns()
+    await _patch_legacy_subscription_lemon_column()

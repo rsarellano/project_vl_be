@@ -6,6 +6,11 @@ from __future__ import annotations
 def friendly_diagram_generation_error(*, domain: str, subtype: str) -> str:
     """Plain-language message instead of raw Pydantic validation dumps."""
     if domain == "math":
+        if subtype == "calculus":
+            return (
+                "We couldn't build a valid calculus diagram for this question. "
+                "Try stating the limit or derivative in plain text, such as lim x->3 of x^2+5x-4."
+            )
         if subtype == "algebra":
             return (
                 "We couldn't build a valid algebra diagram for this question. "

@@ -13,7 +13,7 @@ class QuestionTypeClassification(BaseModel):
     domain: Literal["coding", "math", "science"]
     subtype: str = Field(
         description=(
-            "Math: algebra | geometry | arithmetic | general. "
+            "Math: algebra | geometry | arithmetic | trigonometry | calculus | general. "
             "Coding: code_solution | code_explain | loop_trace | general. "
             "Science: biology | chemistry | physics | general."
         ),

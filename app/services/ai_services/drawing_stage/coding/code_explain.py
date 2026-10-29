@@ -22,8 +22,38 @@ EXAMPLE = """{
         { "id": "fields", "lines": [1, 2], "label": "Fields" }
       ]
     },
-    { "id": "explain-decl", "BoxCreation": true, "linkedPortion": "decl", "text": ["Declares a", "User type"] },
-    { "id": "explain-fields", "BoxCreation": true, "linkedPortion": "fields", "text": ["id and name", "properties"] }
+    {
+      "id": "explain-decl",
+      "BoxCreation": true,
+      "linkedPortion": "decl",
+      "text": ["Declares a", "User type"],
+      "derivation": {
+        "fromStepId": "source",
+        "beats": [
+          { "type": "note", "text": "This line names the shape of a User object." },
+          { "type": "expression", "text": "interface User {" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "An interface is a TypeScript contract: it describes fields without creating a runtime class." },
+          { "type": "explain", "text": "Why: declaring User up front lets the rest of the file type-check any value that claims to be a User." }
+        ]
+      }
+    },
+    {
+      "id": "explain-fields",
+      "BoxCreation": true,
+      "linkedPortion": "fields",
+      "text": ["id and name", "properties"],
+      "derivation": {
+        "fromStepId": "explain-decl",
+        "beats": [
+          { "type": "note", "text": "These fields are the data every User must carry." },
+          { "type": "expression", "text": "id: string; name: string;" },
+          { "type": "arrow", "direction": "down" },
+          { "type": "explain", "text": "id is a string identifier; name is the display string." },
+          { "type": "explain", "text": "Both are required — omitting either makes an object fail the User type." }
+        ]
+      }
+    }
   ],
   "connections": []
 }"""
